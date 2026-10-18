@@ -1,0 +1,17 @@
+[Unit]
+Description=testops-gate firewall rules (nftables table inet testops_gate)
+# Load after the distribution's nftables.service, which may flush the whole ruleset
+After=nftables.service
+Before=network-pre.target openvpn-server@server.service
+Wants=network-pre.target
+ConditionPathExists=/etc/testops-gate/nftables.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/testops-gate/nftables.nft
+ExecReload=/usr/sbin/nft -f /etc/testops-gate/nftables.nft
+ExecStop=-/usr/sbin/nft delete table inet testops_gate
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    # The VPN itself (OpenVPN, Unbound, firewall) keeps running; `testops-gate uninstall` removes it.
+    systemctl disable --now testops-gated.service testops-gate-suricata-update.timer >/dev/null 2>&1 || true
+fi
+find /usr/lib/testops-gate -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+exit 0

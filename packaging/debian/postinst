@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    getent group testops-gate >/dev/null || addgroup --system --quiet testops-gate
+    install -d -m 0750 -o root -g testops-gate /etc/testops-gate /var/lib/testops-gate /var/log/testops-gate
+    python3 -m compileall -q /usr/lib/testops-gate >/dev/null 2>&1 || true
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload || true
+        if [ -f /etc/testops-gate/config.yaml ]; then
+            # Upgrade: regenerate the configuration with the new version, then restart the daemon
+            testops-gate apply || echo "testops-gate: could not regenerate the configuration; run 'sudo testops-gate apply'" >&2
+            systemctl try-restart testops-gated.service || true
+        fi
+    fi
+    if [ ! -f /etc/testops-gate/config.yaml ]; then
+        echo "testops-gate is installed. Run 'sudo testops-gate' to set up the VPN server."
+    fi
+fi
+
+exit 0

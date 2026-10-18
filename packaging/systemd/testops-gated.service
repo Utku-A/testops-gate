@@ -1,0 +1,17 @@
+[Unit]
+Description=testops-gate log collector and security monitor
+Documentation=man:testops-gate(8)
+After=network-online.target openvpn-server@server.service unbound.service testops-gate-firewall.service
+Wants=network-online.target
+ConditionPathExists=/etc/testops-gate/config.yaml
+
+[Service]
+Type=simple
+# Runs as root: it reads the OpenVPN management socket, conntrack events and nftables sets
+ExecStart=/usr/bin/testops-gated
+Restart=on-failure
+RestartSec=5
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

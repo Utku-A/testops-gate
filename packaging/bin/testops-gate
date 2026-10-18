@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Halis Utku Aladağ (TestOps Center, https://testopscenter.com)
+import sys
+
+sys.path[:0] = ["/usr/lib/testops-gate", "/usr/lib/testops-gate/vendor"]
+
+from testops_gate.cli import main  # noqa: E402
+
+sys.exit(main())

@@ -1,0 +1,12 @@
+.venv/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Kept in the private CI repository (testops-gate-ci), not published
+tests/
+e2e/
+ci/
+Jenkinsfile

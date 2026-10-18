@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Suricata rules (ET Open) for testops-gate
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/systemd/system/suricata.service.d/testops-gate.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/suricata-update --no-test
+ExecStartPost=-/bin/systemctl try-reload-or-restart suricata.service

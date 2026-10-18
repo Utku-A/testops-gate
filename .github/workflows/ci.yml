@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e . ruff
+      - run: ruff check src
+      - name: Import every module
+        run: python -c "import pkgutil, importlib, testops_gate; [importlib.import_module(m.name) for m in pkgutil.walk_packages(testops_gate.__path__, 'testops_gate.') if not m.name.endswith('__main__')]"
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./packaging/build-deb.sh
+      - run: sh -n install.sh

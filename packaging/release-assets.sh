@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Halis Utku Aladağ (TestOps Center, https://testopscenter.com)
+# Collect the release files in dist/release/:
+#   testops-gate_<version>_all.deb, testops-gate_all.deb (stable name), SHA256SUMS, VERSION, install.sh
+# When building a tag (TAG_NAME=vX.Y.Z) the tag must match the version in pyproject.toml.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
+if [ -n "${TAG_NAME:-}" ] && [ "$TAG_NAME" != "v$VERSION" ]; then
+    echo "tag $TAG_NAME does not match pyproject version $VERSION" >&2
+    exit 1
+fi
+DEB="dist/testops-gate_${VERSION}_all.deb"
+[ -f "$DEB" ] || { echo "$DEB not found: run packaging/build-deb.sh first" >&2; exit 1; }
+
+R=dist/release
+rm -rf "$R" && mkdir -p "$R"
+cp "$DEB" "$R/"
+cp "$DEB" "$R/testops-gate_all.deb"
+cp install.sh "$R/"
+echo "$VERSION" > "$R/VERSION"
+(cd "$R" && sha256sum "testops-gate_${VERSION}_all.deb" testops-gate_all.deb > SHA256SUMS)
+ls -l "$R"

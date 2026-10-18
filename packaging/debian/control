@@ -1,0 +1,18 @@
+Package: testops-gate
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: all
+Maintainer: @MAINTAINER@
+Installed-Size: @SIZE@
+Homepage: https://testopscenter.com
+Depends: python3 (>= 3.10), python3-yaml, openvpn (>= 2.5), easy-rsa, unbound, nftables, conntrack, openssl, iproute2, ca-certificates, systemd
+Suggests: suricata, suricata-update
+Description: TestOps Gate - OpenVPN private network with a terminal dashboard
+ TestOps Gate sets up an OpenVPN server and manages it from a terminal
+ dashboard (`testops-gate`) or the command line:
+  * VPN users with fixed addresses, per-user split or full tunnel
+  * internal DNS host records (Unbound)
+  * per-user session, DNS and connection logs with retention
+  * security monitoring (port scans, blocked networks, forbidden ports,
+    malicious domains, Suricata IDS) with Slack and email alerts
