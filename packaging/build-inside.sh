@@ -33,7 +33,7 @@ for script in postinst prerm postrm; do
     install -m 0755 "/src/packaging/debian/$script" "$STAGE/DEBIAN/"
 done
 SIZE=$(du -sk "$STAGE" | cut -f1)
-MAINTAINER=${DEB_MAINTAINER:-testops-gate maintainers <noreply@github.com>}
+MAINTAINER=${DEB_MAINTAINER:-Halis Utku Aladağ <noreply@testopscenter.com>}
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SIZE@/$SIZE/" -e "s|@MAINTAINER@|$MAINTAINER|" /src/packaging/debian/control > "$STAGE/DEBIAN/control"
 
 DEB="/out/testops-gate_${VERSION}_all.deb"

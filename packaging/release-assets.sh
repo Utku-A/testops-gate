@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Halis Utku Aladağ (TestOps Center, https://testopscenter.com)
 # Collect the release files in dist/release/:
-#   testops-gate_<version>_all.deb, testops-gate_all.deb (stable name), SHA256SUMS, VERSION, install.sh
+#   testops-gate_<version>_all.deb, testops-gate_all.deb (stable name), SHA256SUMS, VERSION, install.sh,
+#   NOTES.md (the version's section of CHANGELOG.md)
 # When building a tag (TAG_NAME=vX.Y.Z) the tag must match the version in pyproject.toml.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -21,5 +22,15 @@ cp "$DEB" "$R/"
 cp "$DEB" "$R/testops-gate_all.deb"
 cp install.sh "$R/"
 echo "$VERSION" > "$R/VERSION"
+# Body of the "## <version> — <date>" section, without leading/trailing blank lines
+awk -v v="$VERSION" '
+    /^## / { if (found) exit; found = ($2 == v); next }
+    found { line[++n] = $0 }
+    END {
+        s = 1; while (s <= n && line[s] ~ /^[[:space:]]*$/) s++
+        e = n; while (e >= s && line[e] ~ /^[[:space:]]*$/) e--
+        for (i = s; i <= e; i++) print line[i]
+    }' CHANGELOG.md > "$R/NOTES.md"
+[ -s "$R/NOTES.md" ] || { echo "CHANGELOG.md has no section for $VERSION" >&2; exit 1; }
 (cd "$R" && sha256sum "testops-gate_${VERSION}_all.deb" testops-gate_all.deb > SHA256SUMS)
 ls -l "$R"

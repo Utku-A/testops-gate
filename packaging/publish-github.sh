@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Halis Utku Aladağ (TestOps Center, https://testopscenter.com)
-# Create (or reuse) the GitHub release v<version> and upload dist/release/ as assets.
+# Create (or reuse) the GitHub release v<version> with NOTES.md as its text and upload dist/release/ as assets.
 # Environment: GITHUB_TOKEN (contents: write), GITHUB_REPO (owner/repo), GIT_COMMIT (optional)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,7 +15,8 @@ json_id() { python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])'; }
 
 if ! id=$(api "$API/releases/tags/$TAG" 2>/dev/null | json_id); then
     body=$(python3 -c 'import json, sys; print(json.dumps({"tag_name": sys.argv[1], "name": f"testops-gate {sys.argv[2]}",
-        "target_commitish": sys.argv[3], "generate_release_notes": True}))' "$TAG" "$VERSION" "${GIT_COMMIT:-main}")
+        "target_commitish": sys.argv[3], "body": open(sys.argv[4]).read()}))' \
+        "$TAG" "$VERSION" "${GIT_COMMIT:-main}" "$R/NOTES.md")
     id=$(api -X POST "$API/releases" -d "$body" | json_id)
 fi
 for file in "testops-gate_${VERSION}_all.deb" testops-gate_all.deb SHA256SUMS VERSION install.sh; do
