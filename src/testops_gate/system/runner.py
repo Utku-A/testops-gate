@@ -54,6 +54,11 @@ class SystemRunner(Runner):
             proc = subprocess.run(
                 list(cmd),
                 input=input,
+                # Keep commands away from the dashboard's terminal: one that changes its mode
+                # (stty, a password prompt) turns echo back on and mouse codes appear as text.
+                # No stdin, and a new session without a controlling terminal (/dev/tty).
+                stdin=subprocess.DEVNULL if input is None else None,
+                start_new_session=True,
                 capture_output=True,
                 text=True,
                 env={**os.environ, **env} if env else None,

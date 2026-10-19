@@ -3,6 +3,11 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.2.1 — 2026-10-19
+
+- Dashboard: mouse escape codes (`^[[<35;152;14M…`) could appear as text while it refreshed;
+  commands it runs in the background no longer have access to its terminal
+
 ## 0.2.0 — 2026-10-19
 
 - Passwords on top of the certificate, chosen in Settings → Authentication (or
