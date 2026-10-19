@@ -115,6 +115,7 @@ class GateApp(App):
         self.snapshot = Snapshot()
         self._ticks = 0
         self._rebuilding = False
+        self._composing = False  # the interface is being re-created (language change)
         self._config_mtime = 0.0
         self._ops = 0  # management operations running in threads
         self._last_bytes: tuple[float, int] | None = None
@@ -198,10 +199,12 @@ class GateApp(App):
 
     async def rebuild(self) -> None:
         """Re-create the interface in the current language, keeping the open page."""
-        self._rebuilding = True
-        self.apply_language(self.ctx.cfg.language)
-        await self.query_one(Shell).recompose()
-        self._rebuilding = False
+        self._rebuilding = self._composing = True
+        try:
+            self.apply_language(self.ctx.cfg.language)
+            await self.query_one(Shell).recompose()
+        finally:
+            self._rebuilding = self._composing = False
         self.update_clock()
         self.refresh_bindings()
         try:
@@ -339,6 +342,12 @@ class GateApp(App):
         self.page = key
         self.query_one("#content", ContentSwitcher).current = key
         self.call_after_refresh(self.current_page().focus_default)
+
+    async def action_quit(self) -> None:
+        # Quitting halfway through a language change would leave widgets mounting into a closed app
+        while self._composing:
+            await asyncio.sleep(0.02)
+        await super().action_quit()
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
