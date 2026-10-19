@@ -3,7 +3,7 @@
 
 """testops-gate: OpenVPN private network management."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 BRAND = "TestOps Center"
 BRAND_URL = "https://testopscenter.com"

@@ -19,7 +19,7 @@ from testops_gate.config import Config
 from testops_gate.i18n import T
 from testops_gate.paths import P
 from testops_gate.render import TUN_DEVICE
-from testops_gate.system import netinfo, nft, services
+from testops_gate.system import forwarding, netinfo, nft, services
 from testops_gate.system.runner import CommandError, run
 
 Log = Callable[[str], None]
@@ -95,6 +95,11 @@ def diagnose(cfg: Config) -> list[Finding]:
     findings.append(Finding("port", not owners, T("Port {port}/{proto}", port=cfg.server.port,
                                                     proto=cfg.server.protocol),
                             port_hint(cfg, owners) if owners else ""))
+    blocked = forwarding.missing()
+    findings.append(Finding("forwarding", not blocked, T("Forwarding through other firewalls"),
+                            T("{where} drops VPN traffic (Docker or ufw?): no internet in full tunnel, no internal "
+                              "hosts. testops-gate repair adds an exception (testops-gated keeps it).",
+                              where=", ".join(blocked)) if blocked else ""))
     for unit, active in states.items():
         findings.append(Finding(f"service:{unit}", active, SERVICE_NAMES.get(unit, unit),
                                 "" if active else (journal_reason(unit) or T("not running"))))
@@ -152,6 +157,9 @@ def repair(ctx, log: Log = print) -> list[Finding]:
         nft.load()
     except CommandError as exc:
         log(T("Warning: {error}", error=exc))
+    added = forwarding.ensure()
+    if added:
+        log(T("Another firewall drops forwarded traffic; allowed VPN traffic through: {where}", where=", ".join(added)))
     if services.SURICATA_UNIT in units(cfg) and P.suricata_dropin.exists():
         services.systemctl("restart", services.SURICATA_UNIT, check=False)
 

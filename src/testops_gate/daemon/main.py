@@ -37,7 +37,7 @@ from testops_gate.db import LiveClient
 from testops_gate.i18n import set_language
 from testops_gate.paths import P
 from testops_gate.render.openvpn import network, server_ip
-from testops_gate.system import nft
+from testops_gate.system import forwarding, nft
 from testops_gate.system.easyrsa import crl_next_update
 from testops_gate.system.openvpn import ClientStatus, read_status_file
 
@@ -424,6 +424,11 @@ class Daemon:
             logs.audit("user.unblock", user.name, actor="testops-gated")
         if expired:
             write_ccd(self.ctx.cfg, self.ctx.store)
+        # Docker and ufw rebuild their rules on restart: keep VPN traffic allowed through them
+        added = forwarding.ensure()
+        if added:
+            log.info("allowed VPN traffic through %s", ", ".join(added))
+            logs.audit("firewall.allow", ", ".join(added), actor="testops-gated")
         if now - self.last_cleanup >= 3600:
             self.last_cleanup = now
             retention = self.ctx.cfg.logging.retention_days

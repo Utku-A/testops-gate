@@ -3,6 +3,15 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.4.2 — 2026-10-19
+
+- Full tunnel had no internet on servers where another firewall drops forwarded traffic: Docker
+  sets the iptables FORWARD policy to DROP, ufw does by default, and so do many nftables
+  rulesets. VPN traffic (and its replies) is now allowed through such firewalls with two rules
+  tagged `testops-gate`; testops-gated re-adds them within a minute when Docker or ufw rebuilds
+  its rules, `testops-gate doctor` reports the situation and uninstall removes the rules.
+  Internal hosts in split mode were affected the same way
+
 ## 0.4.1 — 2026-10-19
 
 - When a service does not take a change (e.g. Unbound after adding a host), the error now says

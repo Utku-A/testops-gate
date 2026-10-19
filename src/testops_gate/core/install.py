@@ -20,7 +20,7 @@ from testops_gate.core.doctor import BASE_PACKAGES, port_hint, port_owners
 from testops_gate.db import Store
 from testops_gate.i18n import T, set_language
 from testops_gate.paths import P
-from testops_gate.system import netinfo, nft, services
+from testops_gate.system import forwarding, netinfo, nft, services
 from testops_gate.system.easyrsa import EasyRSA
 from testops_gate.system.runner import CommandError, run
 
@@ -196,6 +196,9 @@ def install(opts: InstallOptions, log: Log = print) -> Context:
         services.systemctl("enable", "--now", services.SURICATA_UPDATE_TIMER, check=False)
     services.enable_now(services.DAEMON_UNIT)
     services.restart(services.DAEMON_UNIT)
+    added = forwarding.ensure()
+    if added:
+        log(T("Another firewall drops forwarded traffic; allowed VPN traffic through: {where}", where=", ".join(added)))
 
     logs.audit("install", f"endpoint={cfg.server.endpoint} port={cfg.server.port}/{cfg.server.protocol}")
     if opts.first_user and not ctx.store.user(opts.first_user):
@@ -225,6 +228,7 @@ def uninstall(purge: bool = False, remove_packages: bool = False, log: Log = pri
         services.disable_now(services.SURICATA_UNIT)
         P.suricata_dropin.unlink()
     nft.delete_table()
+    forwarding.remove()
 
     log(T("Removing generated configuration"))
     for path in (P.unbound_conf, P.unbound_hosts_conf, P.sysctl_file):

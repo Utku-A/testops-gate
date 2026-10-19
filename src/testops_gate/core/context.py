@@ -34,7 +34,7 @@ from testops_gate.db import Host, Store, User
 from testops_gate.i18n import T, set_language
 from testops_gate.paths import P
 from testops_gate.render import openvpn
-from testops_gate.system import services
+from testops_gate.system import forwarding, services
 from testops_gate.system.easyrsa import EasyRSA
 from testops_gate.system.openvpn import Management, ManagementError
 from testops_gate.system.runner import run
@@ -448,6 +448,8 @@ class Context:
         self.cfg.tunnel.mode = mode
         self.save()
         self.apply()
+        if self.reload:
+            forwarding.ensure()  # full tunnel forwards everything: other firewalls must let it through
         logs.audit("tunnel.mode", mode)
 
     def set_extra_routes(self, routes: list[str]) -> None:

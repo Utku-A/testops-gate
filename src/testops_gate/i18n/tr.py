@@ -601,4 +601,8 @@ TR: dict[str, str] = {
     "Sign-in is certificate only: the profile alone is enough to connect, so anyone who reads the email can connect.": "Giriş yalnızca sertifikayla: profil tek başına bağlanmaya yeter, e-postayı okuyan herkes bağlanabilir.",
     "Saved, but {services} did not start:\n{reasons}\nFind out why: sudo testops-gate doctor (r on the Dashboard)": "Kaydedildi, ancak {services} başlamadı:\n{reasons}\nNedenini bulun: sudo testops-gate doctor (Dashboard'da r)",
     "✗ Service problem": "✗ Servis sorunu",
+    # --- other firewalls ---
+    "Another firewall drops forwarded traffic; allowed VPN traffic through: {where}": "Başka bir güvenlik duvarı yönlendirilen trafiği engelliyor; VPN trafiğine izin verildi: {where}",
+    "Forwarding through other firewalls": "Diğer güvenlik duvarlarından geçiş",
+    "{where} drops VPN traffic (Docker or ufw?): no internet in full tunnel, no internal hosts. testops-gate repair adds an exception (testops-gated keeps it).": "{where} VPN trafiğini engelliyor (Docker ya da ufw?): full tünelde internet, iç hostlara erişim olmaz. testops-gate repair bir istisna ekler (testops-gated korur).",
 }
