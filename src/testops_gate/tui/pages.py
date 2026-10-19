@@ -45,6 +45,7 @@ from testops_gate.tui.forms import (
     HostForm,
     ListForm,
     PasswordForm,
+    RepairDialog,
     UninstallDialog,
     UserForm,
     auth_options,
@@ -200,6 +201,8 @@ class DashboardPage(Page):
             text.append("● " if active else "○ ", f"bold {GREEN}" if active else f"bold {RED}")
             text.append(f"{SERVICE_NAMES.get(unit, unit):<14}", "bold" if active else RED)
             text.append(details.get(unit, "") if active else T("not running"), "dim")
+        if not all(snap.services.values()):
+            text.append("\n\n" + T("r: diagnose and repair"), f"bold {YELLOW}")
         self.query_one("#services", Static).update(text)
 
         self.query_one("#spark", Sparkline).data = list(snap.throughput) or [0.0]
@@ -217,6 +220,13 @@ class DashboardPage(Page):
         if not snap.alerts:
             recent.append(T("No alerts"), "dim")
         self.query_one("#recent-alerts", Static).update(recent)
+
+    def action_repair(self) -> None:
+        def done(repaired: bool | None) -> None:
+            if repaired:
+                self.tg.refresh_snapshot(services_too=True)
+
+        self.app.push_screen(RepairDialog(self.tg.ctx), done)
 
 
 # --- Users ----------------------------------------------------------------------

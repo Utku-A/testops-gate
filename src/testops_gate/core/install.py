@@ -16,6 +16,7 @@ from testops_gate import config as config_mod
 from testops_gate import logs
 from testops_gate.config import AUTH_MODES, PROTOCOLS, TUNNEL_MODES, UPSTREAMS, Config
 from testops_gate.core.context import Context, ValidationError
+from testops_gate.core.doctor import BASE_PACKAGES, port_hint, port_owners
 from testops_gate.db import Store
 from testops_gate.i18n import T, set_language
 from testops_gate.paths import P
@@ -23,7 +24,6 @@ from testops_gate.system import netinfo, nft, services
 from testops_gate.system.easyrsa import EasyRSA
 from testops_gate.system.runner import CommandError, run
 
-BASE_PACKAGES = ["openvpn", "easy-rsa", "unbound", "nftables", "conntrack", "openssl", "iproute2", "ca-certificates"]
 IDS_PACKAGES = services.IDS_PACKAGES
 IDS_MIN_MEMORY_MB = 2048
 GROUP = "testops-gate"
@@ -161,6 +161,10 @@ def install(opts: InstallOptions, log: Log = print) -> Context:
     cfg.security.enabled = opts.security
     cfg.security.categories["ids"] = want_ids
     cfg.installed_packages = sorted(set(cfg.installed_packages) | set(new_packages))
+    # Before anything is written: OpenVPN cannot start on a port another program holds
+    owners = port_owners(cfg)
+    if owners:
+        raise ValidationError(port_hint(cfg, owners))
     config_mod.save(cfg)
 
     _setup_pki(cfg, log)

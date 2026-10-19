@@ -191,7 +191,42 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(table([T("User"), "VPN IP", T("Real IP"), T("Since"), "↓", "↑"],
                     [[c.name, c.vpn_ip, c.real_ip, fmt_ts(c.connected_since), fmt_bytes(c.rx), fmt_bytes(c.tx)]
                      for c in live.values()]))
+    if not all(states.values()):
+        print()
+        print(T("Some services are not running. Find out why: sudo testops-gate doctor · fix: sudo testops-gate repair"))
     return 0 if all(states.values()) else 3
+
+
+def print_findings(findings) -> None:
+    for f in findings:
+        mark = "✓" if f.ok else "✗"
+        print(f"  {mark} {f.title:<22} {T('ok') if f.ok else ''}".rstrip())
+        for line in f.detail.splitlines():
+            print(f"      {line}")
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from testops_gate.core import doctor
+
+    findings = doctor.diagnose(open_context().cfg)
+    print_findings(findings)
+    if doctor.problems(findings):
+        print()
+        print(T("Repair (keeps users, certificates and settings): sudo testops-gate repair"))
+        return 1
+    return 0
+
+
+def cmd_repair(args: argparse.Namespace) -> int:
+    from testops_gate.core import doctor
+
+    ctx = open_context()
+    if not confirm(T("Reinstall missing packages, regenerate the configuration and restart the services?"), args.yes):
+        return 1
+    findings = doctor.repair(ctx, log=lambda line: print(f"• {line}", flush=True))
+    print()
+    print_findings(findings)
+    return 1 if doctor.problems(findings) else 0
 
 
 # --- users ----------------------------------------------------------------------
@@ -553,6 +588,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-y", "--yes", action="store_true")
 
     sub.add_parser("status", help="service state and connected users")
+    sub.add_parser("doctor", help="find out why services are not running")
+    sub.add_parser("repair", help="reinstall missing packages, regenerate the configuration, restart services").add_argument(
+        "-y", "--yes", action="store_true")
     sub.add_parser("apply", help=argparse.SUPPRESS)  # regenerate configuration (package upgrades)
 
     p = sub.add_parser("update", help="update testops-gate to the latest release")
@@ -672,7 +710,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
-    "install": cmd_install, "uninstall": cmd_uninstall, "status": cmd_status, "apply": cmd_apply, "update": cmd_update, "user": cmd_user,
+    "install": cmd_install, "uninstall": cmd_uninstall, "status": cmd_status, "doctor": cmd_doctor, "repair": cmd_repair, "apply": cmd_apply, "update": cmd_update, "user": cmd_user,
     "host": cmd_host, "tunnel": cmd_tunnel, "settings": cmd_settings, "security": cmd_security,
     "alerts": cmd_alerts, "notify": cmd_notify, "logs": cmd_logs,
 }

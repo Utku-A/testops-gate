@@ -86,6 +86,20 @@ Güncelleme sırasında:
 
 Sürüm bilgisi `https://testopscenter.com/testops-gate/latest/VERSION` dosyasından okunur (günde en fazla bir kez; `testops-gated` de kontrol eder). Kendi sunucunuzdan dağıtıyorsanız: `sudo testops-gate settings update-url https://ornek.com/testops-gate` (`VERSION`, `testops-gate_all.deb`, `SHA256SUMS` barındıran bir adres). Kontrolleri kapatmak için: `sudo testops-gate settings update-check off`. `curl -fsSL https://testopscenter.com/install.sh | sudo sh` komutunu tekrar çalıştırmak da güncelleme yapar.
 
+## Sorun giderme
+
+Bir servis çalışmıyorsa (dashboard'da Servisler panelinde kırmızı görünür) Dashboard'da `r` tuşuna basın ya da:
+
+```bash
+sudo testops-gate doctor     # nedenini gösterir: servis log'undaki hata satırları, portu tutan program, eksik paket/dosya
+sudo testops-gate repair     # eksik paketleri kurar, artakalan tg0 arayüzünü kaldırır, sertifika ve anahtarları,
+                             # yapılandırmayı yeniden oluşturur, servisleri sırayla yeniden başlatır
+```
+
+Onarım kullanıcıları, sertifikaları ve ayarları korur. Onaramadığı bir sorun kalırsa söyler; örneğin VPN portunu başka bir
+program kullanıyorsa (`Port 6000/tcp şu program tarafından kullanılıyor: Xorg (pid 812)`) o programı durdurun ya da
+başka bir portla kurun. Kurulum da başlamadan portun boş olup olmadığını kontrol eder.
+
 ## Kaldırma
 
 ```bash

@@ -3,6 +3,18 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.3.0 — 2026-10-19
+
+- `testops-gate doctor` finds out why services are not running: the error lines from the
+  service's log, a VPN port held by another program (and which one), missing packages,
+  configuration files, certificates or the TUN device
+- `testops-gate repair` puts the installation back together: installs missing packages, removes a
+  leftover TUN interface, restores certificates and keys, regenerates the configuration, clears
+  failed service states and restarts the services; users, certificates and settings are kept
+- Dashboard: when a service is down the Services panel says so; `r` opens diagnose and repair
+- The installer stops before writing anything when the VPN port is already in use, and names
+  the program using it
+
 ## 0.2.1 — 2026-10-19
 
 - Dashboard: mouse escape codes (`^[[<35;152;14M…`) could appear as text while it refreshed;

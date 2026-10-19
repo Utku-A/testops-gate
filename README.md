@@ -88,6 +88,8 @@ Run `testops-gate --help` or `testops-gate <command> --help` for all options.
 ## Update and uninstall
 
 ```bash
+sudo testops-gate doctor            # a service is not running? shows why
+sudo testops-gate repair            # reinstall, regenerate and restart; users and certificates are kept
 sudo testops-gate update            # also from the dashboard: Settings → Updates
 sudo testops-gate uninstall         # removes everything; --keep-data keeps certificates, users and logs
 ```

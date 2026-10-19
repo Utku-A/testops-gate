@@ -105,6 +105,7 @@ class GateApp(App):
         Binding("right", "focus_content", show=False),
         *[Binding(str(i + 1), f"goto('{key}')", show=False) for i, (key, _, _) in enumerate(NAV)],
         Binding("question_mark", "help", "Help"),
+        Binding("r", "repair", "Repair"),  # on the Dashboard; pages bind r themselves (Users: renew)
         Binding("q", "quit", "Quit"),
     ]
 
@@ -348,6 +349,14 @@ class GateApp(App):
         while self._composing:
             await asyncio.sleep(0.02)
         await super().action_quit()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "repair":
+            return self.ctx is not None and self.page == "dashboard"
+        return True
+
+    def action_repair(self) -> None:
+        self.query_one(DashboardPage).action_repair()
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())

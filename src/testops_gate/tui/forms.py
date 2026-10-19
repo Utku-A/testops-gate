@@ -416,3 +416,86 @@ class UninstallDialog(ModalScreen[list[str] | None]):
         log.write(f"[bold green]✓ {T('TestOps Gate removed')}[/]")
         await asyncio.sleep(1.5)
         self.dismiss(final)
+
+
+class RepairDialog(ModalScreen[bool]):
+    """Diagnose the services and, on request, repair them; dismisses True if something was repaired."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+        Binding("left", "app.focus_previous", show=False),
+        Binding("right", "app.focus_next", show=False),
+    ]
+
+    def __init__(self, ctx) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.running = False
+        self.repaired = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog wide") as dialog:
+            dialog.border_title = T("Diagnose and repair")
+            yield Static(T("Checking…"), id="r-findings")
+            yield RichLog(id="r-log", wrap=True)
+            yield Label(T("Repair reinstalls missing packages, regenerates the configuration and restarts the "
+                          "services. Users, certificates and settings are kept."), classes="hint")
+            with Horizontal(classes="dialog-buttons"):
+                yield Button(T("Close"), id="close")
+                yield Button(T("Repair"), variant="warning", id="r-run", disabled=True)
+
+    async def on_mount(self) -> None:
+        self.query_one("#r-log").display = False
+        self.query_one("#close", Button).focus()
+        from testops_gate.core import doctor
+
+        self.show(await asyncio.to_thread(doctor.diagnose, self.ctx.cfg))
+        self.query_one("#r-run", Button).disabled = False
+
+    def show(self, findings) -> None:
+        text = Text()
+        for i, f in enumerate(findings):
+            if i:
+                text.append("\n")
+            text.append("✓ " if f.ok else "✗ ", "bold #3fb950" if f.ok else "bold #f85149")
+            text.append(f.title, "" if f.ok else "bold")
+            for line in f.detail.splitlines():
+                text.append(f"\n    {line}", "#8b949e")
+        self.query_one("#r-findings", Static).update(text)
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "r-run":
+            await self.run_repair()
+        else:
+            self.action_close()
+
+    def action_close(self) -> None:
+        if not self.running:
+            self.dismiss(self.repaired)
+
+    async def run_repair(self) -> None:
+        if self.running:
+            return
+        from testops_gate.core import doctor
+
+        self.running = True
+        for widget_id in ("#r-run", "#close"):
+            self.query_one(widget_id).disabled = True
+        log = self.query_one("#r-log", RichLog)
+        log.clear()
+        log.display = True
+
+        def progress(line: str) -> None:
+            self.app.call_from_thread(log.write, f"• {line}")
+
+        try:
+            findings = await self.app.run_in_thread(doctor.repair, self.ctx, progress)  # type: ignore[attr-defined]
+        except (ValidationError, CommandError, OSError) as exc:
+            log.write(f"[bold red]✗ {exc}[/]")
+        else:
+            self.show(findings)
+            self.repaired = True
+        self.running = False
+        self.query_one("#close", Button).disabled = False
+        self.query_one("#r-run", Button).disabled = False
+        self.query_one("#close", Button).focus()
