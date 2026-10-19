@@ -14,7 +14,7 @@ import sqlite3
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from testops_gate.paths import P
@@ -73,6 +73,10 @@ SCHEMA = [
         PRIMARY KEY (channel, user, category)
     );
     """,
+    # v2: password for username + password sign-in (scrypt hash, empty: none set)
+    """
+    ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 LIVE_TTL = 10.0  # seconds after which a live_clients row is considered stale
@@ -89,6 +93,13 @@ class User:
     cert_expires: float
     blocked_until: float = 0.0
     note: str = ""
+    password_hash: str = ""
+    # Plain password, only on the object add_user() returns when it set one; never stored
+    password: str = field(default="", repr=False, compare=False)
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
 
     @property
     def blocked(self) -> bool:
@@ -176,10 +187,10 @@ class Store:
     def add_user(self, user: User) -> None:
         with self.tx() as c:
             c.execute(
-                "INSERT INTO users (name, email, vpn_ip, mode, enabled, created_at, cert_expires, blocked_until, note)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (name, email, vpn_ip, mode, enabled, created_at, cert_expires, blocked_until, note,"
+                " password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (user.name, user.email, user.vpn_ip, user.mode, int(user.enabled), user.created_at,
-                 user.cert_expires, user.blocked_until, user.note),
+                 user.cert_expires, user.blocked_until, user.note, user.password_hash),
             )
 
     def update_user(self, name: str, **fields: object) -> None:

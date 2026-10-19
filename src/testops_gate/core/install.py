@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from testops_gate import config as config_mod
 from testops_gate import logs
-from testops_gate.config import PROTOCOLS, TUNNEL_MODES, UPSTREAMS, Config
+from testops_gate.config import AUTH_MODES, PROTOCOLS, TUNNEL_MODES, UPSTREAMS, Config
 from testops_gate.core.context import Context, ValidationError
 from testops_gate.db import Store
 from testops_gate.i18n import T, set_language
@@ -43,6 +43,8 @@ class InstallOptions:
     ids: bool = True
     first_user: str = ""
     first_user_email: str = ""
+    first_user_password: str = ""  # generated when empty and the sign-in mode uses passwords
+    auth_mode: str = "user-password"
     install_packages: bool = True
 
 
@@ -71,6 +73,8 @@ def validate(opts: InstallOptions) -> None:
         raise ValidationError(T("Unknown tunnel mode: {mode}", mode=opts.tunnel_mode))
     if opts.upstream not in UPSTREAMS:
         raise ValidationError(T("Unknown DNS upstream: {value}", value=opts.upstream))
+    if opts.auth_mode not in AUTH_MODES:
+        raise ValidationError(T("Unknown sign-in mode: {mode}", mode=opts.auth_mode))
 
 
 def _ensure_dirs() -> None:
@@ -153,6 +157,7 @@ def install(opts: InstallOptions, log: Log = print) -> Context:
     cfg.server.interface = netinfo.default_interface()
     cfg.tunnel.mode = opts.tunnel_mode
     cfg.dns.upstream = opts.upstream
+    cfg.auth.mode = opts.auth_mode
     cfg.security.enabled = opts.security
     cfg.security.categories["ids"] = want_ids
     cfg.installed_packages = sorted(set(cfg.installed_packages) | set(new_packages))
@@ -190,8 +195,9 @@ def install(opts: InstallOptions, log: Log = print) -> Context:
 
     logs.audit("install", f"endpoint={cfg.server.endpoint} port={cfg.server.port}/{cfg.server.protocol}")
     if opts.first_user and not ctx.store.user(opts.first_user):
-        user = ctx.add_user(opts.first_user, opts.first_user_email)
-        log(T("User {name} created: {path}", name=user.name, path=P.profiles_dir / f"{user.name}.ovpn"))
+        # the password (generated when empty) is shown by the caller from ctx.new_user, not logged
+        ctx.new_user = ctx.add_user(opts.first_user, opts.first_user_email, password=opts.first_user_password or None)
+        log(T("User {name} created: {path}", name=opts.first_user, path=P.profiles_dir / f"{opts.first_user}.ovpn"))
     log(T("Installation complete"))
     return ctx
 

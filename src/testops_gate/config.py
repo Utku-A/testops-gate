@@ -23,6 +23,11 @@ from testops_gate.paths import P
 TUNNEL_MODES = ("split", "full")
 SEVERITIES = ("low", "medium", "high")
 PROTOCOLS = ("udp", "tcp")
+# How VPN users sign in, on top of their certificate:
+#   user-password     username + password, checked by the server
+#   profile-password  the private key in the .ovpn profile is encrypted with a password
+#   certificate       the certificate alone
+AUTH_MODES = ("user-password", "profile-password", "certificate")
 
 UPSTREAMS: dict[str, tuple[str, list[str]]] = {
     "cloudflare": ("Cloudflare", ["1.1.1.1", "1.0.0.1"]),
@@ -77,6 +82,11 @@ class ServerConfig:
 class TunnelConfig:
     mode: str = "split"
     extra_routes: list[str] = field(default_factory=list)  # CIDRs routed via VPN in split mode
+
+
+@dataclass
+class AuthConfig:
+    mode: str = "user-password"
 
 
 @dataclass
@@ -145,6 +155,7 @@ class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     tunnel: TunnelConfig = field(default_factory=TunnelConfig)
     dns: DnsConfig = field(default_factory=DnsConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
@@ -203,6 +214,9 @@ def exists() -> bool:
 def load() -> Config:
     data = yaml.safe_load(P.config_file.read_text()) if P.config_file.exists() else {}
     cfg = _from_dict(Config, data or {})
+    if data and "auth" not in data:
+        # Installed before passwords existed: keep certificate-only so issued profiles keep working
+        cfg.auth.mode = "certificate"
     if P.secrets_file.exists():
         secret_data = yaml.safe_load(P.secrets_file.read_text()) or {}
         for channel in cfg.channels:

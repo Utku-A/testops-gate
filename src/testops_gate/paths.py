@@ -100,6 +100,14 @@ class Paths:
         return self.openvpn_dir / "ccd"
 
     @property
+    def auth_script(self) -> Path:
+        return self.openvpn_dir / "testops-gate-auth"
+
+    @property
+    def auth_passwords(self) -> Path:
+        return self.openvpn_dir / "testops-gate-passwords"
+
+    @property
     def mgmt_socket(self) -> Path:
         return self._p("/run/openvpn-server/testops-gate.sock")
 

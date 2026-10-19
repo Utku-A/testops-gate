@@ -143,7 +143,8 @@ Shell { height: 1fr; }
 .buttons Button { margin-right: 2; }
 
 /* Dialogs */
-ConfirmDialog, UserForm, HostForm, ChannelForm, ListForm, ExportForm, HelpScreen, UninstallDialog { align: center middle; }
+ConfirmDialog, UserForm, HostForm, ChannelForm, ListForm, ExportForm, PasswordForm, AccessDialog, HelpScreen,
+UninstallDialog { align: center middle; }
 .settings-panel.danger { border: round $error 60%; }
 .settings-panel.danger:focus-within { border: round $error; }
 #u-log { height: 10; border: round $border-blurred; margin-top: 1; }
@@ -159,7 +160,7 @@ ConfirmDialog, UserForm, HostForm, ChannelForm, ListForm, ExportForm, HelpScreen
 .row > Vertical.narrow { width: 16; }
 .dialog .field-label { color: $text-muted; margin-top: 1; }
 .dialog Input, .dialog Select { width: 100%; }
-.dialog .hint { margin-top: 1; }
+.dialog .hint { margin-top: 1; width: 100%; }
 .dialog-message { margin-bottom: 1; }
 #f-error { color: $error; text-style: bold; margin-top: 1; height: auto; }
 .dialog-buttons { height: auto; margin-top: 1; align-horizontal: right; }

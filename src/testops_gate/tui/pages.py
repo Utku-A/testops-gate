@@ -38,7 +38,17 @@ from testops_gate.config import SECURITY_CATEGORIES, UPSTREAMS
 from testops_gate.i18n import LANGUAGES, T
 from testops_gate.render.openvpn import effective_mode, server_ip
 from testops_gate.system import dnsquery, services
-from testops_gate.tui.forms import ChannelForm, ExportForm, HostForm, ListForm, UninstallDialog, UserForm
+from testops_gate.tui.forms import (
+    AccessDialog,
+    ChannelForm,
+    ExportForm,
+    HostForm,
+    ListForm,
+    PasswordForm,
+    UninstallDialog,
+    UserForm,
+    auth_options,
+)
 from testops_gate.tui.theme import GREEN, KIND_STYLE, RED, SEVERITY_STYLE, YELLOW
 from testops_gate.tui.widgets import ConfirmDialog, FormSelect, StatCard, ToggleRow, panel
 
@@ -221,6 +231,7 @@ class UsersPage(Page):
         Binding("x,delete", "delete", "Delete"),
         Binding("o", "export", "Profile"),
         Binding("r", "renew", "Renew"),
+        Binding("p", "password", "Password"),
         Binding("slash", "search", "Search"),
         Binding("down", "focus_table", show=False),
     ]
@@ -299,15 +310,35 @@ class UsersPage(Page):
         ctx = self.tg.ctx
 
         def submit(data: dict):
-            return ctx.add_user(data["name"], data["email"], data["mode"], data["days"], data["vpn_ip"])
+            return ctx.add_user(data["name"], data["email"], data["mode"], data["days"], data["vpn_ip"],
+                                data.get("password"))
 
         def done(user) -> None:
             if user:
                 self.tg.refresh_snapshot()
-                self.notify(T("Profile: {path}", path=f"/var/lib/testops-gate/profiles/{user.name}.ovpn"),
-                            title=T("✓ {name} added · {ip}", name=user.name, ip=user.vpn_ip))
+                self.app.push_screen(AccessDialog(T("✓ {name} added · {ip}", name=user.name, ip=user.vpn_ip),
+                                                  ctx.cfg, [(user.name, user.password)]))
 
-        self.app.push_screen(UserForm(submit), done)
+        self.app.push_screen(UserForm(submit, ask_password=ctx.uses_passwords), done)
+
+    def action_password(self) -> None:
+        user = self.selected()
+        if not user:
+            return
+        ctx = self.tg.ctx
+        if not ctx.uses_passwords:
+            self.notify(T("Passwords are off (Settings → Authentication)"), severity="warning")
+            return
+
+        def submit(data: dict):
+            return ctx.set_password(user.name, data["password"])
+
+        def done(password) -> None:
+            if password:
+                self.app.push_screen(AccessDialog(T("✓ New password · {name}", name=user.name), ctx.cfg,
+                                                  [(user.name, password)]))
+
+        self.app.push_screen(PasswordForm(submit, user.name, ctx.cfg.auth.mode == "profile-password"), done)
 
     def action_edit(self) -> None:
         user = self.selected()
@@ -379,9 +410,16 @@ class UsersPage(Page):
             return
 
         async def done(confirmed: bool | None) -> None:
-            if confirmed and await self.tg.run_op(self.tg.ctx.renew_user, user.name) is not None:
-                self.tg.refresh_snapshot()
-                self.notify(T("New certificate issued for {name}; send the user the new profile.", name=user.name))
+            if not confirmed:
+                return
+            password = await self.tg.run_op(self.tg.ctx.renew_user, user.name)
+            if password is None:
+                return
+            self.tg.refresh_snapshot()
+            self.notify(T("New certificate issued for {name}; send the user the new profile.", name=user.name))
+            if isinstance(password, str) and password:
+                self.app.push_screen(AccessDialog(T("✓ New profile · {name}", name=user.name), self.tg.ctx.cfg,
+                                                  [(user.name, password)]))
 
         self.app.push_screen(ConfirmDialog(
             T("Renew certificate"),
@@ -821,6 +859,13 @@ class SettingsPage(Page):
                     yield Label(T("Other DNS servers, DNS-over-TLS and DNS-over-HTTPS are redirected or refused"),
                                 classes="field-value hint")
                     yield Switch(cfg.dns.enforce, id="dns-enforce")
+            with panel(T("Authentication"), classes="settings-panel"):
+                with Horizontal(classes="field"):
+                    yield Label(T("Sign-in"), classes="field-name")
+                    yield FormSelect(auth_options(), value=cfg.auth.mode, allow_blank=False, id="auth-mode")
+                yield Label(T("On top of the certificate. Username + password: checked by the server, a stolen "
+                              "profile is not enough. Profile password: the key in the .ovpn file is encrypted."),
+                            classes="hint")
             with panel(T("Notification channels"), classes="settings-panel"):
                 yield ChannelTable(id="channels", cursor_type="row", zebra_stripes=True)
                 yield Label(T("n: add · enter/e: edit · space: on/off · x: delete · t: test   (when the table is focused)"),
@@ -943,6 +988,34 @@ class SettingsPage(Page):
         elif event.select.id == "upstream" and event.value != cfg.dns.upstream:
             if await self.tg.run_op(self.tg.ctx.set_upstream, str(event.value)) is not None:
                 self.notify(T("DNS upstream: {value}", value=UPSTREAMS[str(event.value)][0]))
+        elif event.select.id == "auth-mode" and event.value != cfg.auth.mode:
+            self.change_auth_mode(str(event.value))
+
+    def change_auth_mode(self, mode: str) -> None:
+        ctx = self.tg.ctx
+        label = dict((key, text) for text, key in auth_options())[mode]
+
+        async def done(confirmed: bool | None) -> None:
+            if not confirmed:
+                self.query_one("#auth-mode", Select).value = ctx.cfg.auth.mode
+                return
+            created = await self.tg.run_op(ctx.set_auth_mode, mode)
+            if created is None:
+                self.query_one("#auth-mode", Select).value = ctx.cfg.auth.mode
+                return
+            if isinstance(created, dict) and created:
+                self.app.push_screen(AccessDialog(T("✓ Sign-in: {mode}", mode=label), ctx.cfg, list(created.items())))
+            else:
+                self.notify(T("Every profile was renewed: send users their profile again."),
+                            title=T("✓ Sign-in: {mode}", mode=label))
+
+        self.app.push_screen(ConfirmDialog(T("Sign-in: {mode}", mode=label), T(
+            "Change how users sign in to [b]{mode}[/b]?\n\n"
+            "• Every .ovpn profile is renewed; users need their new profile\n"
+            "• OpenVPN restarts and connected users reconnect\n"
+            "• Passwords that are needed are generated and shown once",
+            mode=label,
+        ), confirm_label="Change"), done)
 
     async def on_switch_changed(self, event: Switch.Changed) -> None:
         if event.switch.id == "update-check" and event.value != self.tg.ctx.cfg.updates.check:

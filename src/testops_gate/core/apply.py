@@ -10,6 +10,7 @@ host and tunnel-mode changes never need an OpenVPN restart.
 
 from __future__ import annotations
 
+import grp
 import logging
 import os
 from pathlib import Path
@@ -51,6 +52,28 @@ def write_ccd(cfg: Config, store: Store) -> bool:
     return changed
 
 
+def write_auth(cfg: Config, store: Store) -> bool:
+    """Verify script and password hashes for username + password sign-in (removed in other modes).
+
+    OpenVPN reads them per sign-in as nobody:nogroup, so a password change needs no restart.
+    """
+    if cfg.auth.mode != "user-password":
+        changed = False
+        for path in (P.auth_script, P.auth_passwords):
+            if path.exists():
+                path.unlink()
+                changed = True
+        return changed
+    changed = write_if_changed(P.auth_script, openvpn.AUTH_SCRIPT, 0o755)
+    changed |= write_if_changed(P.auth_passwords, openvpn.passwords_file(store.users()), 0o640)
+    if os.geteuid() == 0:
+        try:
+            os.chown(P.auth_passwords, 0, grp.getgrnam("nogroup").gr_gid)
+        except KeyError:
+            pass
+    return changed
+
+
 def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
     """Regenerate all files; returns the names of the parts that changed."""
     changed: set[str] = set()
@@ -58,6 +81,8 @@ def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
         changed.add("openvpn")
     if write_ccd(cfg, store):
         changed.add("ccd")
+    if write_auth(cfg, store):
+        changed.add("auth")
     if write_if_changed(P.unbound_conf, unbound.main_conf(cfg)):
         changed.add("unbound")
     if write_if_changed(P.unbound_hosts_conf, unbound.hosts_conf(store.hosts())):

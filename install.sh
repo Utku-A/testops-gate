@@ -133,7 +133,7 @@ if fetch "$TG_BASE/VERSION" "$TG_TMP/VERSION"; then
 fi
 fetch "$TG_BASE/$TG_ASSET" "$TG_TMP/$TG_ASSET" || download_failed "$TG_BASE/$TG_ASSET"
 fetch "$TG_BASE/SHA256SUMS" "$TG_TMP/SHA256SUMS" || download_failed "$TG_BASE/SHA256SUMS"
-TG_SIZE=$(wc -c <"$TG_TMP/$TG_ASSET" | awk '{ printf "%.1f MB", $1 / 1048576 }')
+TG_SIZE=$(wc -c <"$TG_TMP/$TG_ASSET" | LC_ALL=C awk '{ printf "%.1f MB", $1 / 1048576 }')
 ok "Download" "TestOps Gate ${TG_VERSION:-package} · $TG_SIZE"
 
 step "Checksum" "SHA-256"
@@ -162,16 +162,35 @@ fi
 
 # --- next --------------------------------------------------------------------
 
+cmd() { printf '      %s%s%s\n' "$B" "$*" "$R"; }
+text() { printf '    %s\n' "$*"; }
+
 if [ "$#" -gt 0 ]; then
     note "Setting up: testops-gate install $*"
     exec testops-gate install "$@"
 fi
 
 if [ -f /etc/testops-gate/config.yaml ]; then
-    note "Updated. Open the dashboard with: ${B}sudo testops-gate${R}"
-elif [ -t 1 ] && [ -r /dev/tty ]; then
-    note "Starting the setup wizard…"
-    exec testops-gate </dev/tty
-else
-    note "Installed. Set up the VPN server with: ${B}sudo testops-gate${R}"
+    printf '\n  %s✓ Updated to TestOps Gate %s.%s Users, certificates and settings are kept.\n\n' "$GREEN" "$TG_AFTER" "$R"
+    text "Open the dashboard:"
+    printf '\n'; cmd "sudo testops-gate"; printf '\n'
+    exit 0
 fi
+
+# Piped (`curl | sudo sh`): the wizard cannot take over the terminal from inside the pipe
+# (sudo would suspend the job), so print what to run. From a file it starts directly.
+if [ -t 0 ] && [ -t 1 ]; then
+    note "Starting the setup wizard…"
+    exec testops-gate
+fi
+
+printf '\n  %s✓ TestOps Gate %s is installed.%s Next, set up the VPN server:\n\n' "$GREEN" "$TG_AFTER" "$R"
+cmd "sudo testops-gate"
+printf '\n'
+text "The setup wizard asks for the public address, port, tunnel mode and the first user,"
+text "then opens the dashboard. The same command opens the dashboard afterwards."
+printf '\n'
+text "Unattended setup instead:"
+printf '\n'; cmd "sudo testops-gate install --endpoint vpn.example.com --user alice --yes"; printf '\n'
+text "${D}Guide: https://github.com/Utku-A/testops-gate#readme${R}"
+printf '\n'

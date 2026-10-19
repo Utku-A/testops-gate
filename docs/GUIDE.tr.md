@@ -65,7 +65,8 @@ Paketi elle kurmak da mümkün: `sudo apt install ./testops-gate_0.1.1_all.deb &
 | `--language` | `en` | `en`, `tr` |
 | `--no-security` | | Güvenlik izlemeyi kapalı kur |
 | `--no-ids` | | Suricata'yı kurma (≈400 MB RAM tasarrufu) |
-| `--user`, `--email` | | İlk VPN kullanıcısı |
+| `--user`, `--email` | | İlk VPN kullanıcısı (parolası oluşturulup bir kez gösterilir) |
+| `--auth` | `user-password` | Giriş yöntemi: `user-password`, `profile-password`, `certificate` |
 
 ## Güncelleme
 
@@ -152,6 +153,38 @@ flowchart TB
 | `suricata` (ops.) | `tg0` arayüzünde IDS, ET Open kuralları (günlük güncellenir) |
 
 ---
+
+## Kullanıcılar ve giriş
+
+Her kullanıcının kendi sertifikası, sabit VPN adresi ve `.ovpn` profili vardır. Sertifikaya ek olarak giriş yöntemi
+seçilebilir (Ayarlar → Kimlik doğrulama veya `testops-gate settings auth …`):
+
+| Yöntem | Nasıl çalışır | Parola değişince |
+|---|---|---|
+| `user-password` (varsayılan) | İstemci bağlanırken kullanıcı adı ve parola sorar, sunucu doğrular (scrypt özeti saklanır). Kopyalanan bir profil tek başına yetmez. | Profil aynı kalır; açık oturum kapatılır |
+| `profile-password` | `.ovpn` içindeki özel anahtar parolayla şifrelenir; istemci profil parolasını sorar. Sunucu parolayı bilmez. | Yeni profil oluşturulur, kullanıcıya yeniden gönderilir |
+| `certificate` | Yalnızca sertifika (0.1.x ile kurulan sunucular değiştirilene kadar böyle kalır) | — |
+
+```bash
+sudo testops-gate user add ayse                     # parola oluşturur; parolayı ve profilin yerini gösterir
+echo 'kendi-parolam' | sudo testops-gate user add ayse --password-stdin
+sudo testops-gate user passwd ayse                  # yeni parola (dashboard: Kullanıcılar → p)
+sudo testops-gate settings auth profile-password    # yöntemi değiştir: bütün profiller yenilenir
+```
+
+Parolalar yalnızca bir kez gösterilir. Yöntem değiştirildiğinde bütün profiller yenilenir ve gereken parolalar
+oluşturulup listelenir; kullanıcılara yeni profillerini gönderin.
+
+**Profil nerede, nasıl alınır?** Profiller `/var/lib/testops-gate/profiles/<kullanıcı>.ovpn` dosyasındadır
+(yalnızca root okuyabilir). Kendi ev dizininize kopyalayıp bilgisayarınıza indirin:
+
+```bash
+sudo testops-gate user export ayse -o ~/            # ~/ayse.ovpn, sahibi siz olursunuz
+scp siz@vpn.example.com:ayse.ovpn .                 # bilgisayarınızda
+```
+
+Dashboard'da Kullanıcılar → `o` aynı işi yapar. Profili OpenVPN Connect, `openvpn` veya Tunnelblick gibi bir
+istemciye aktarın.
 
 ## Tünel modu
 
@@ -284,7 +317,7 @@ testops-gate logs     USER|security|audit [--since 2h] [--day D] [--kind dns] [-
 | `↑ ↓` | Menüde / listede gezin |
 | `enter`, `→` | Bölüme gir · `esc`, `←` menüye dön · `1`–`6` doğrudan atla |
 | `a` `e` `x` `space` | Ekle · düzenle · sil · aç/kapat |
-| `o` `r` `/` | Profil dışa aktar · sertifika yenile · ara (Kullanıcılar) |
+| `o` `r` `p` `/` | Profil dışa aktar · sertifika yenile · yeni parola · ara (Kullanıcılar) |
 | `t` | DNS testi (Hostlar), log filtresi (Loglar), test bildirimi (kanal tablosu) |
 | `[` `]` `f` | Önceki/sonraki gün · canlı takip (Loglar) |
 | `b` `p` | Engelli ağlar · yasaklı portlar (Güvenlik) |

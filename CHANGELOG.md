@@ -3,6 +3,21 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.2.0 — 2026-10-19
+
+- Passwords on top of the certificate, chosen in Settings → Authentication (or
+  `testops-gate settings auth`):
+  - **username + password** (default for new installations): checked by the server, so a
+    copied profile alone is not enough; passwords are stored as scrypt hashes
+  - **profile password**: the private key in the `.ovpn` file is encrypted
+  - **certificate only**: as before; servers installed with 0.1.x keep this until it is changed
+- New users get a generated password (or one you choose); the dashboard, the setup wizard and
+  `testops-gate user add` show it once together with where the profile is and how to download it
+- `testops-gate user passwd NAME` and `p` on the Users page set a new password
+- Wrong passwords count as failed sign-ins in security monitoring
+- Installer: after `curl … | sudo sh` it prints what to run next instead of starting the wizard
+  inside the pipe, which suspended the shell job (`Stopped`)
+
 ## 0.1.1 — 2026-10-19
 
 - Supported systems: Debian 12 or later and Ubuntu 22.04 or later (LTS and interim releases), their

@@ -85,11 +85,14 @@ AUTH_MARKERS = (
     "VERIFY ERROR",
     "unwrapping failed",
     "client-config-dir authentication failed",
+    "verification failed for peer",  # wrong username or password
+    "rejected due to 'disable'",
     "AUTH_FAILED",
     "certificate revoked",
 )
 REAL_IP_RE = re.compile(rf"(?:\[AF_INET\]|^|\s|/)({IP}):\d+")
 CN_RE = re.compile(r"(?:CN=|common name ')([A-Za-z0-9_.-]+)")
+PEER_NAME_RE = re.compile(rf"^([A-Za-z0-9_.-]+)/{IP}:\d+ ")  # "alice/88.1.2.3:5000 ..."
 
 
 def parse_openvpn_auth(line: str) -> AuthFailure | None:
@@ -97,14 +100,14 @@ def parse_openvpn_auth(line: str) -> AuthFailure | None:
         return None
     if "TLS Error: TLS object -> incoming plaintext read error" in line:
         return None  # follows a VERIFY ERROR that was already counted
-    if "[UNDEF]: 'AUTH_FAILED'" in line:
-        return None  # OpenVPN logs AUTH_FAILED twice per attempt
+    if "SENT CONTROL" in line:
+        return None  # the AUTH_FAILED sent to the client follows the line that says why
     ip_match = REAL_IP_RE.search(line)
     if not ip_match:
         return None
-    cn_match = CN_RE.search(line)
+    name_match = CN_RE.search(line) or PEER_NAME_RE.search(line)
     reason = next(marker for marker in AUTH_MARKERS if marker in line)
-    return AuthFailure(ip_match.group(1), cn_match.group(1) if cn_match else "", reason)
+    return AuthFailure(ip_match.group(1), name_match.group(1) if name_match else "", reason)
 
 
 @dataclass

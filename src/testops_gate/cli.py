@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 
 from testops_gate import BRAND, BRAND_URL, __version__, logs
 from testops_gate import config as config_mod
-from testops_gate.config import SECURITY_CATEGORIES, TUNNEL_MODES, UPSTREAMS, Channel
+from testops_gate.config import AUTH_MODES, SECURITY_CATEGORIES, TUNNEL_MODES, UPSTREAMS, Channel
 from testops_gate.core.context import USER_MODES, Context, ValidationError
 from testops_gate.i18n import LANGUAGES, T, set_language
 from testops_gate.paths import P
@@ -96,12 +96,16 @@ def cmd_install(args: argparse.Namespace) -> int:
     opts = InstallOptions(
         endpoint=endpoint, port=args.port, protocol=args.protocol, tunnel_mode=args.mode, upstream=args.dns,
         language=args.language, security=not args.no_security, ids=not args.no_ids,
-        first_user=args.user or "", first_user_email=args.email or "",
+        first_user=args.user or "", first_user_email=args.email or "", auth_mode=args.auth,
     )
     print(T("Endpoint: {endpoint}:{port}/{proto}", endpoint=endpoint, port=args.port, proto=args.protocol))
     if not confirm(T("Install TestOps Gate on this server?"), args.yes):
         return 1
-    install(opts, log=lambda line: print(f"• {line}", flush=True))
+    ctx = install(opts, log=lambda line: print(f"• {line}", flush=True))
+    if ctx.new_user:
+        print_access(ctx, ctx.new_user.name, ctx.new_user.password)
+    print()
+    print(T("Open the dashboard: sudo testops-gate"))
     return 0
 
 
@@ -204,20 +208,51 @@ def user_state(ctx: Context, name: str) -> str:
     return T("online") if name in ctx.store.live_clients() else T("offline")
 
 
+def print_access(ctx, name: str, password: str = "") -> None:
+    """Sign-in details and where the profile is, after a user or a password was created."""
+    from testops_gate.core import access
+
+    print()
+    for label, value in access.details(ctx.cfg, name, password):
+        print(f"  {label:<18} {value}")
+    print()
+    if password:
+        print(f"  {access.password_note(ctx.cfg)}")
+    print(f"  {access.connect_hint(ctx.cfg)}")
+
+
+def read_password(args: argparse.Namespace) -> str | None:
+    """--password-stdin: first line of stdin; otherwise None (generate one)."""
+    if not getattr(args, "password_stdin", False):
+        return None
+    return sys.stdin.readline().rstrip("\r\n")
+
+
 def cmd_user(args: argparse.Namespace) -> int:
     ctx = open_context()
     action = args.user_action
     if action == "list":
         live = ctx.store.live_clients()
         rows = []
+        with_password = ctx.cfg.auth.mode == "user-password"
         for u in ctx.store.users():
-            rows.append([u.name, user_state(ctx, u.name), u.vpn_ip, u.mode, u.email or "—",
-                         fmt_ts(u.cert_expires)[:10], live[u.name].real_ip if u.name in live else "—"])
-        print(table([T("User"), T("Status"), "VPN IP", T("Tunnel"), T("Email"), T("Expires"), T("Real IP")], rows))
+            row = [u.name, user_state(ctx, u.name), u.vpn_ip, u.mode, u.email or "—",
+                   fmt_ts(u.cert_expires)[:10], live[u.name].real_ip if u.name in live else "—"]
+            rows.append(row + (["✓" if u.has_password else T("not set")] if with_password else []))
+        headers = [T("User"), T("Status"), "VPN IP", T("Tunnel"), T("Email"), T("Expires"), T("Real IP")]
+        print(table(headers + ([T("Password")] if with_password else []), rows))
     elif action == "add":
-        user = ctx.add_user(args.name, args.email or "", args.mode, args.days, args.ip or "")
+        user = ctx.add_user(args.name, args.email or "", args.mode, args.days, args.ip or "", read_password(args))
         print(T("User {name} created: {path}", name=user.name, path=P.profiles_dir / f"{user.name}.ovpn"))
         print(T("VPN address: {ip}", ip=user.vpn_ip))
+        print_access(ctx, user.name, user.password)
+    elif action == "passwd":
+        password = ctx.set_password(args.name, read_password(args))
+        if ctx.cfg.auth.mode == "profile-password":
+            print(T("New profile password for {name}; send the user the new profile.", name=args.name))
+        else:
+            print(T("New password for {name}; the current session was closed.", name=args.name))
+        print_access(ctx, args.name, password)
     elif action == "edit":
         ctx.update_user(args.name, email=args.email, mode=args.mode, vpn_ip=args.ip, note=args.note)
         print(T("{name} updated", name=args.name))
@@ -235,8 +270,9 @@ def cmd_user(args: argparse.Namespace) -> int:
         ctx.delete_user(args.name)
         print(T("{name} deleted · certificate revoked", name=args.name))
     elif action == "renew":
-        ctx.renew_user(args.name, args.days)
+        password = ctx.renew_user(args.name, args.days)
         print(T("New certificate issued for {name}; send the user the new profile.", name=args.name))
+        print_access(ctx, args.name, password)
     elif action == "export":
         if args.output:
             print(ctx.export_profile(args.name, args.output))
@@ -307,12 +343,21 @@ def cmd_settings(args: argparse.Namespace) -> int:
         ctx.set_update_check(args.value == "on")
     elif args.settings_action == "update-url":
         ctx.set_update_url("" if args.value == "default" else args.value)
+    elif args.settings_action == "auth":
+        created = ctx.set_auth_mode(args.value)
+        print(T("Sign-in mode: {mode}. Every profile was renewed: send users their profile again.", mode=args.value))
+        if created:
+            from testops_gate.core import access
+
+            print(table([T("User"), access.password_label(ctx.cfg)], [[n, p] for n, p in created.items()]))
+            print(access.password_note(ctx.cfg))
     cfg = ctx.cfg
     print(table([T("Setting"), T("Value")], [
         ["language", cfg.language],
         ["retention", f"{cfg.logging.retention_days} {T('days')}"],
         ["dns", f"{cfg.dns.upstream} ({UPSTREAMS[cfg.dns.upstream][0]})"],
         ["dns-enforce", T("on") if cfg.dns.enforce else T("off")],
+        ["auth", cfg.auth.mode],
         ["update-check", T("on") if cfg.updates.check else T("off")],
         ["update-url", cfg.updates.base_url or "default (testopscenter.com)"],
         ["endpoint", f"{cfg.server.endpoint}:{cfg.server.port}/{cfg.server.protocol}"],
@@ -494,6 +539,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-ids", action="store_true", help="do not install Suricata")
     p.add_argument("--user", help="create a first VPN user")
     p.add_argument("--email", help="email of the first user")
+    p.add_argument("--auth", choices=AUTH_MODES, default="user-password",
+                   help="how users sign in on top of their certificate (default: user-password)")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
 
     p = sub.add_parser("uninstall", help="remove testops-gate completely (data, packages and itself)")
@@ -522,6 +569,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--mode", choices=USER_MODES, default="default", help="tunnel mode override")
     a.add_argument("--days", type=int, default=365, help="certificate validity")
     a.add_argument("--ip", help="fixed VPN address (default: next free)")
+    a.add_argument("--password-stdin", action="store_true", help="read the password from stdin (default: generate)")
+    a = us.add_parser("passwd", help="set a new password (generated unless --password-stdin)")
+    a.add_argument("name")
+    a.add_argument("--password-stdin", action="store_true")
     a = us.add_parser("edit")
     a.add_argument("name")
     a.add_argument("--email")
@@ -573,6 +624,8 @@ def build_parser() -> argparse.ArgumentParser:
         "value", choices=["on", "off"])
     ss.add_parser("update-check", help="check for new releases daily").add_argument("value", choices=["on", "off"])
     ss.add_parser("update-url", help="release mirror URL, or `default`").add_argument("value")
+    ss.add_parser("auth", help="how users sign in: user-password, profile-password or certificate").add_argument(
+        "value", choices=AUTH_MODES)
 
     p = sub.add_parser("security", help="security monitoring")
     se = p.add_subparsers(dest="security_action")

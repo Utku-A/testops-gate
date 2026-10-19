@@ -21,6 +21,7 @@
 ## Features
 
 - **VPN users** — one command or one form per user; fixed VPN address, `.ovpn` profile, disable / renew / delete.
+- **Passwords** — username + password checked by the server (default), a password on the profile, or certificate only.
 - **Internal DNS** — map names to private addresses (`stage.internal → 10.0.5.20`, wildcards, CNAMEs).
 - **Split or full tunnel** — only your internal hosts over the VPN, or all traffic; globally or per user.
 - **Per-user logs** — sessions, DNS queries and connections in `/var/log/testops-gate/users/<user>/`, kept 14 days.
@@ -67,14 +68,20 @@ sudo testops-gate                                   # dashboard
 Or from the command line:
 
 ```bash
-sudo testops-gate user add alice --email alice@example.com
-sudo testops-gate user export alice > alice.ovpn     # import into any OpenVPN client
+sudo testops-gate user add alice --email alice@example.com   # prints the password and the profile path
+sudo testops-gate user export alice -o ~/            # copy the .ovpn to your home, then scp it
+sudo testops-gate user passwd alice                  # new password
 sudo testops-gate host add stage.internal 10.0.5.20
 sudo testops-gate tunnel set full                    # or: split
 sudo testops-gate notify add slack --name '#vpn-alerts' --webhook https://hooks.slack.com/services/…
 sudo testops-gate logs alice --since 2h
 sudo testops-gate status
 ```
+
+Profiles are kept in `/var/lib/testops-gate/profiles/<user>.ovpn`. Import the profile into any OpenVPN
+client (OpenVPN Connect, `openvpn`, Tunnelblick); with passwords on, it asks for the username and password.
+Change how users sign in with `testops-gate settings auth user-password|profile-password|certificate`
+or in the dashboard under Settings → Authentication.
 
 Run `testops-gate --help` or `testops-gate <command> --help` for all options.
 

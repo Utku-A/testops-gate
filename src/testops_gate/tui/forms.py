@@ -10,18 +10,26 @@ import dataclasses
 from collections.abc import Callable
 from typing import Any
 
+from rich.table import Table
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RichLog, Select, Static, Switch
 
-from testops_gate.config import Channel
+from testops_gate.config import Channel, Config
+from testops_gate.core import access
 from testops_gate.core.context import ValidationError
 from testops_gate.db import Host, User
 from testops_gate.i18n import T
 from testops_gate.system.runner import CommandError
 from testops_gate.tui.widgets import FormScreen, FormSelect
+
+
+def auth_options() -> list[tuple[str, str]]:
+    return [(T("Username + password"), "user-password"), (T("Profile password"), "profile-password"),
+            (T("Certificate only"), "certificate")]
 
 
 def severity_options() -> list[tuple[str, str]]:
@@ -36,9 +44,10 @@ def _int(value: str, label: str) -> int:
 
 
 class UserForm(FormScreen):
-    def __init__(self, submit: Callable[[dict], Any], user: User | None = None) -> None:
+    def __init__(self, submit: Callable[[dict], Any], user: User | None = None, ask_password: bool = False) -> None:
         super().__init__(submit)
         self.user = user
+        self.ask_password = ask_password and user is None
 
     def compose(self) -> ComposeResult:
         u = self.user
@@ -61,6 +70,9 @@ class UserForm(FormScreen):
                 yield Label(T("Certificate validity"), classes="field-label")
                 yield FormSelect([(T("1 year"), "365"), (T("2 years"), "730"), (T("5 years"), "1825")],
                                  value="365", allow_blank=False, id="f-days")
+                if self.ask_password:
+                    yield Label(T("Password"), classes="field-label")
+                    yield Input(password=True, placeholder=T("empty: generate a strong password"), id="f-password")
             else:
                 yield Label(T("Changes apply when the user reconnects."), classes="hint")
             yield Label("", id="f-error")
@@ -77,7 +89,74 @@ class UserForm(FormScreen):
             raise ValidationError(T("Username cannot be empty"))
         if self.user is None:
             data["days"] = int(self.query_one("#f-days", Select).value)
+        if self.ask_password:
+            data["password"] = self.query_one("#f-password", Input).value or None
         return data
+
+
+class PasswordForm(FormScreen):
+    def __init__(self, submit: Callable[[dict], Any], name: str, profile_password: bool) -> None:
+        super().__init__(submit)
+        self._name, self._profile_password = name, profile_password
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog") as dialog:
+            dialog.border_title = T("New password · {name}", name=self._name)
+            yield Label(T("Password"), classes="field-label")
+            yield Input(password=True, placeholder=T("empty: generate a strong password"), id="f-password")
+            yield Label(T("A new profile is created; send it to the user.") if self._profile_password
+                        else T("The user's current session is closed."), classes="hint")
+            yield Label("", id="f-error")
+            yield self.buttons()
+
+    def collect(self) -> dict:
+        return {"password": self.query_one("#f-password", Input).value or None}
+
+
+class AccessDialog(ModalScreen[None]):
+    """What to hand a user, shown once after a user or password was created.
+
+    `users` holds (name, password) pairs; one user gets the full details (profile path,
+    how to download it), several get a name/password list.
+    """
+
+    BINDINGS = [Binding("escape", "close", "Close")]
+
+    def __init__(self, title: str, cfg: Config, users: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self._title, self._cfg, self._users = title, cfg, users
+
+    def compose(self) -> ComposeResult:
+        cfg = self._cfg
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="#8b949e", no_wrap=True)
+        grid.add_column()
+        secret = access.password_label(cfg)
+        if len(self._users) == 1:
+            name, password = self._users[0]
+            for label, value in access.details(cfg, name, password):
+                grid.add_row(label, Text(value, style="bold #3fb950") if label == secret else value)
+        else:
+            for name, password in self._users:
+                grid.add_row(name, Text(password, style="bold #3fb950"))
+            grid.add_row(T("Profiles"), str(access.profile_path("*")))
+        with Vertical(classes="dialog wide") as dialog:
+            dialog.border_title = self._title
+            yield Static(grid, id="access-details")
+            if any(password for _, password in self._users):
+                yield Label(access.password_note(cfg), classes="hint")
+            yield Label(access.connect_hint(cfg), classes="hint")
+            with Horizontal(classes="dialog-buttons"):
+                yield Button(T("Close"), variant="primary", id="close")
+
+    def on_mount(self) -> None:
+        self.query_one("#close", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
 
 class HostForm(FormScreen):

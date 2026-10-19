@@ -14,11 +14,13 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, Label, RichLog, Select, Static, Switch
 
 from testops_gate.config import UPSTREAMS
+from testops_gate.core import passwords
 from testops_gate.core.context import ValidationError
 from testops_gate.core.install import IDS_MIN_MEMORY_MB, InstallOptions, install, preflight
 from testops_gate.i18n import LANGUAGES, T
 from testops_gate.system import netinfo
 from testops_gate.system.runner import CommandError
+from testops_gate.tui.forms import AccessDialog, auth_options
 from testops_gate.tui.widgets import FormSelect
 
 
@@ -73,6 +75,14 @@ class InstallScreen(Screen):
                         yield Label(T("First user (optional)"), classes="field-label")
                         yield Input(placeholder=T("e.g. alice"), restrict=r"[a-zA-Z0-9_-]*", max_length=32,
                                     id="w-user")
+                with Horizontal(classes="row"):
+                    with Vertical():
+                        yield Label(T("Sign-in (on top of the certificate)"), classes="field-label")
+                        yield FormSelect(auth_options(), value="user-password", allow_blank=False, id="w-auth")
+                    with Vertical():
+                        yield Label(T("First user's password"), classes="field-label")
+                        yield Input(password=True, placeholder=T("empty: generate a strong password"),
+                                    id="w-password")
                 with Horizontal(classes="switch-row"):
                     yield Label(T("Security monitoring"))
                     yield Switch(True, id="w-security")
@@ -112,6 +122,13 @@ class InstallScreen(Screen):
         except ValueError:
             raise ValidationError(T("Port must be between 1 and 65535")) from None
         security = self.query_one("#w-security", Switch).value
+        auth_mode = str(self.query_one("#w-auth", Select).value)
+        password = self.query_one("#w-password", Input).value
+        if password and auth_mode != "certificate":
+            try:
+                passwords.validate(password)
+            except passwords.PasswordError as exc:
+                raise ValidationError(str(exc)) from None
         return InstallOptions(
             endpoint=self.query_one("#w-endpoint", Input).value.strip(),
             port=port,
@@ -122,6 +139,8 @@ class InstallScreen(Screen):
             security=security,
             ids=security and self.query_one("#w-ids", Switch).value,
             first_user=self.query_one("#w-user", Input).value.strip(),
+            first_user_password=password,
+            auth_mode=auth_mode,
         )
 
     async def action_install(self) -> None:
@@ -153,5 +172,13 @@ class InstallScreen(Screen):
             self.query_one("#w-install", Button).disabled = False
             return
         log.write(f"[bold green]✓ {T('Installation complete')}[/]")
+        if ctx.new_user:
+            # Hand over the first user's sign-in details before the dashboard opens
+            user = ctx.new_user
+            self.app.push_screen(
+                AccessDialog(T("✓ Installation complete · first user"), ctx.cfg, [(user.name, user.password)]),
+                lambda _: self.app.finish_install(ctx),  # type: ignore[attr-defined]
+            )
+            return
         await asyncio.sleep(1.5)
         self.app.finish_install(ctx)  # type: ignore[attr-defined]

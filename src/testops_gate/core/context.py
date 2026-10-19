@@ -14,12 +14,13 @@ import os
 import re
 import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from testops_gate import config as config_mod
 from testops_gate import logs
-from testops_gate.config import SEVERITIES, TUNNEL_MODES, UPSTREAMS, Channel, Config, new_channel_id
-from testops_gate.core.apply import apply_all, write_ccd
+from testops_gate.config import AUTH_MODES, SEVERITIES, TUNNEL_MODES, UPSTREAMS, Channel, Config, new_channel_id
+from testops_gate.core import passwords
+from testops_gate.core.apply import apply_all, write_auth, write_ccd
 from testops_gate.db import Host, Store, User
 from testops_gate.i18n import T, set_language
 from testops_gate.paths import P
@@ -52,6 +53,7 @@ class Context:
     cfg: Config
     store: Store
     reload: bool = True  # False in tests: write files but do not touch services
+    new_user: User | None = field(default=None, repr=False)  # set by install(): the first user
 
     @classmethod
     def open(cls, reload: bool = True) -> Context:
@@ -95,8 +97,28 @@ class Context:
         if other:
             raise ValidationError(T("{ip} is already used by {name}", ip=vpn_ip, name=other.name))
 
+    def _write_user_files(self) -> None:
+        """Per-user files OpenVPN reads on each connection: ccd and the password hashes."""
+        write_ccd(self.cfg, self.store)
+        write_auth(self.cfg, self.store)
+
+    @property
+    def uses_passwords(self) -> bool:
+        return self.cfg.auth.mode != "certificate"
+
+    def _new_password(self, password: str | None) -> str:
+        if not password:
+            return passwords.generate()
+        try:
+            passwords.validate(password)
+        except passwords.PasswordError as exc:
+            raise ValidationError(str(exc)) from None
+        return password
+
     def add_user(self, name: str, email: str = "", mode: str = "default", days: int = CERT_DAYS_DEFAULT,
-                 vpn_ip: str = "") -> User:
+                 vpn_ip: str = "", password: str | None = None) -> User:
+        """Create a user. With passwords on, `password` (generated when empty) is returned once
+        in the result's `password` attribute; it is not stored in plain text anywhere."""
         name = name.strip()
         if not USER_RE.match(name):
             raise ValidationError(T("Username may only contain letters, digits, '-' and '_' (max 32)"))
@@ -108,6 +130,7 @@ class Context:
             raise ValidationError(T("Unknown tunnel mode: {mode}", mode=mode))
         if vpn_ip:
             self._validate_user_ip(vpn_ip, name)
+        password = self._new_password(password) if self.uses_passwords else ""
         pki = EasyRSA()
         if pki.cert(name).exists():
             # left over from an earlier user with the same name: retire it first
@@ -116,13 +139,56 @@ class Context:
         pki.remove_issued(name)
         pki.build_client(name, days)
         now = time.time()
-        user = User(name, email.strip(), vpn_ip or self.allocate_ip(), mode, True, now, now + days * 86400)
+        user = User(name, email.strip(), vpn_ip or self.allocate_ip(), mode, True, now, now + days * 86400,
+                    password_hash=passwords.hash_password(password) if self.cfg.auth.mode == "user-password" else "")
         self.store.add_user(user)
-        self.write_profile(name)
+        self.write_profile(name, key_password=password)
         logs.ensure_user_dir(name)
-        write_ccd(self.cfg, self.store)
+        self._write_user_files()
         logs.audit("user.add", f"{name} vpn_ip={user.vpn_ip} mode={mode} days={days}")
+        user.password = password
         return user
+
+    def set_password(self, name: str, password: str | None = None) -> str:
+        """Set (or generate) a user's password; returns it.
+
+        user-password: the server checks the new password from now on; the session is dropped.
+        profile-password: the profile is re-encrypted; the user needs the new profile.
+        """
+        self._user(name)
+        if not self.uses_passwords:
+            raise ValidationError(T("Passwords are off (Settings → Authentication)"))
+        password = self._new_password(password)
+        if self.cfg.auth.mode == "user-password":
+            self.store.update_user(name, password_hash=passwords.hash_password(password))
+            self._write_user_files()
+            self.kick(name)
+        else:
+            self.write_profile(name, key_password=password)
+        logs.audit("user.password", name)
+        return password
+
+    def set_auth_mode(self, mode: str) -> dict[str, str]:
+        """Switch how users sign in; returns the passwords it had to create (user: password).
+
+        Every profile is rewritten (the sign-in settings are part of it), so users need their
+        profile again; with profile passwords each profile gets a new password.
+        """
+        if mode not in AUTH_MODES:
+            raise ValidationError(T("Unknown sign-in mode: {mode}", mode=mode))
+        self.cfg.auth.mode = mode
+        self.save()
+        created: dict[str, str] = {}
+        for user in self.store.users():
+            password = None
+            if mode == "profile-password" or (mode == "user-password" and not user.has_password):
+                password = created[user.name] = passwords.generate()
+            if mode == "user-password" and password:
+                self.store.update_user(user.name, password_hash=passwords.hash_password(password))
+            self.write_profile(user.name, key_password=password)
+        self.apply()
+        logs.audit("auth.mode", mode)
+        return created
 
     def update_user(self, name: str, *, email: str | None = None, mode: str | None = None,
                     vpn_ip: str | None = None, note: str | None = None) -> User:
@@ -143,7 +209,7 @@ class Context:
             fields["note"] = note
         if fields:
             self.store.update_user(name, **fields)
-            write_ccd(self.cfg, self.store)
+            self._write_user_files()
             logs.audit("user.edit", f"{name} " + " ".join(f"{k}={v}" for k, v in fields.items()))
         return self._user(name)
 
@@ -151,7 +217,7 @@ class Context:
         """Enable or disable a user; returns True if an active session was dropped."""
         self._user(name)
         self.store.update_user(name, enabled=enabled, blocked_until=0)
-        write_ccd(self.cfg, self.store)
+        self._write_user_files()
         kicked = False if enabled else self.kick(name)
         logs.audit("user.enable" if enabled else "user.disable", name)
         return kicked
@@ -159,7 +225,7 @@ class Context:
     def block_user(self, name: str, minutes: int) -> None:
         """Temporary block (automatic blocking): cleared by the daemon when it expires."""
         self.store.update_user(name, blocked_until=time.time() + minutes * 60)
-        write_ccd(self.cfg, self.store)
+        self._write_user_files()
         self.kick(name)
         logs.audit("user.block", f"{name} minutes={minutes}", actor="testops-gated")
 
@@ -172,11 +238,12 @@ class Context:
         pki.remove_issued(name)
         self.store.delete_user(name)
         (P.profiles_dir / f"{name}.ovpn").unlink(missing_ok=True)
-        write_ccd(self.cfg, self.store)
+        self._write_user_files()
         self.kick(name)
         logs.audit("user.delete", name)
 
-    def renew_user(self, name: str, days: int = CERT_DAYS_DEFAULT) -> None:
+    def renew_user(self, name: str, days: int = CERT_DAYS_DEFAULT) -> str:
+        """New certificate and profile; returns the new profile password with profile passwords, else ""."""
         self._user(name)
         pki = EasyRSA()
         if pki.cert(name).exists():
@@ -185,14 +252,19 @@ class Context:
         pki.remove_issued(name)
         pki.build_client(name, days)
         self.store.update_user(name, cert_expires=time.time() + days * 86400)
-        self.write_profile(name)
+        password = passwords.generate() if self.cfg.auth.mode == "profile-password" else ""
+        self.write_profile(name, key_password=password)
         self.kick(name)
         logs.audit("user.renew", f"{name} days={days}")
+        return password
 
     def profile(self, name: str) -> str:
         self._user(name)
         path = P.profiles_dir / f"{name}.ovpn"
         if not path.exists():
+            if self.cfg.auth.mode == "profile-password":
+                raise ValidationError(T("The profile of {name} is missing; set a new password to create it: "
+                                        "testops-gate user passwd {name}", name=name))
             self.write_profile(name)
         return path.read_text()
 
@@ -211,13 +283,20 @@ class Context:
         logs.audit("user.export", f"{name} -> {target}")
         return target
 
-    def write_profile(self, name: str) -> None:
+    def write_profile(self, name: str, key_password: str | None = None) -> None:
         pki = EasyRSA()
+        key = pki.key(name).read_text()
+        if self.cfg.auth.mode == "profile-password":
+            if not key_password:
+                raise ValidationError(T("A profile password is required"))
+            # The password goes through the environment, not the command line (visible in ps)
+            key = run(["openssl", "pkey", "-in", str(pki.key(name)), "-aes-256-cbc", "-passout", "env:TG_KEY_PASS"],
+                      env={"TG_KEY_PASS": key_password}).stdout
         content = openvpn.client_profile(
             self.cfg,
             ca=pki.ca_cert.read_text(),
             cert=pki.client_pem(name),
-            key=pki.key(name).read_text(),
+            key=key,
             tls_crypt=(P.openvpn_dir / "tls-crypt.key").read_text(),
         )
         P.profiles_dir.mkdir(parents=True, exist_ok=True)
