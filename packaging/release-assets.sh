@@ -32,5 +32,6 @@ awk -v v="$VERSION" '
         for (i = s; i <= e; i++) print line[i]
     }' CHANGELOG.md > "$R/NOTES.md"
 [ -s "$R/NOTES.md" ] || { echo "CHANGELOG.md has no section for $VERSION" >&2; exit 1; }
-(cd "$R" && sha256sum "testops-gate_${VERSION}_all.deb" testops-gate_all.deb > SHA256SUMS)
+# Every published file except SHA256SUMS itself (the site rejects a release with an unlisted file)
+(cd "$R" && sha256sum "testops-gate_${VERSION}_all.deb" testops-gate_all.deb install.sh VERSION NOTES.md > SHA256SUMS)
 ls -l "$R"
