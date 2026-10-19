@@ -76,6 +76,16 @@ class Context:
     def apply(self) -> set[str]:
         return apply_all(self.cfg, self.store, reload=self.reload)
 
+    def reconnect(self, names: list[str]) -> list[str]:
+        """Make connected users reconnect so new per-user settings apply; returns who reconnected."""
+        if not self.reload or not names:
+            return []
+        try:
+            management = Management()
+            return [name for name in names if management.restart(name)]
+        except ManagementError:
+            return []
+
     def kick(self, name: str) -> bool:
         if not self.reload:
             return False
@@ -220,6 +230,8 @@ class Context:
             self.store.update_user(name, **fields)
             self._write_user_files()
             logs.audit("user.edit", f"{name} " + " ".join(f"{k}={v}" for k, v in fields.items()))
+            if "mode" in fields or "vpn_ip" in fields:
+                self.reconnect([name])  # its ccd changed: apply it now if connected
         return self._user(name)
 
     def set_user_enabled(self, name: str, enabled: bool) -> bool:
@@ -442,15 +454,19 @@ class Context:
         logs.audit("server.change", f"{new_endpoint}:{new_port}/{new_protocol}")
         return created
 
-    def set_tunnel_mode(self, mode: str) -> None:
+    def set_tunnel_mode(self, mode: str, reconnect: bool = True) -> list[str]:
+        """Change the global tunnel mode; connected users it affects reconnect at once (returned)."""
         if mode not in TUNNEL_MODES:
             raise ValidationError(T("Unknown tunnel mode: {mode}", mode=mode))
+        before = {u.name: openvpn.effective_mode(self.cfg, u) for u in self.store.users()}
         self.cfg.tunnel.mode = mode
         self.save()
         self.apply()
+        affected = [u.name for u in self.store.users() if openvpn.effective_mode(self.cfg, u) != before.get(u.name)]
         if self.reload:
             forwarding.ensure()  # full tunnel forwards everything: other firewalls must let it through
         logs.audit("tunnel.mode", mode)
+        return self.reconnect(affected) if reconnect else []
 
     def set_extra_routes(self, routes: list[str]) -> None:
         clean = []

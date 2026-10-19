@@ -303,13 +303,15 @@ class GateApp(App):
         self.query_one("#server", Label).update(f"{cfg.server.endpoint} · {cfg.server.protocol}/{cfg.server.port}")
         self.refresh_snapshot()
 
-    def tunnel_changed(self) -> None:
+    def tunnel_changed(self, reconnected: list[str] | None = None) -> None:
         mode = self.ctx.cfg.tunnel.mode
         badge = self.query_one("#mode-badge", Label)
         badge.update(f" {mode.upper()} ")
         badge.set_class(mode == "full", "full")
         self.refresh_snapshot()
-        self.notify(T("Applied to connected users when they reconnect."), title=T("Tunnel mode: {mode}", mode=mode))
+        message = (T("Reconnected now: {names}", names=", ".join(reconnected)) if reconnected
+                   else T("No connected user was affected; others get it when they connect."))
+        self.notify(message, title=T("Tunnel mode: {mode}", mode=mode))
 
     # --- navigation ----------------------------------------------------------
 

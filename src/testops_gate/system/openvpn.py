@@ -4,7 +4,9 @@
 """OpenVPN management interface client.
 
 The server listens on a unix socket (see render.openvpn). We use `status 3`
-for the connected client list and `kill <cn>` to drop a session.
+for the connected client list, `kill <cn>` to drop a session and
+`client-kill <id> RESTART` to make a client reconnect at once (its new ccd
+settings apply; with username + password it signs in again with its session token).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ class ClientStatus:
     bytes_received: int  # from the client (upload)
     bytes_sent: int  # to the client (download)
     connected_since: float
+    client_id: int = -1
 
 
 class ManagementError(RuntimeError):
@@ -60,6 +63,18 @@ class Management:
         lines = self.command(f"kill {name}")
         return any(line.startswith("SUCCESS") for line in lines)
 
+    def status(self) -> list[ClientStatus]:
+        return parse_status(self.command("status 3"))
+
+    def restart(self, name: str) -> bool:
+        """Tell a connected user's client to reconnect now; False if not connected."""
+        done = False
+        for client in self.status():
+            if client.name == name and client.client_id >= 0:
+                lines = self.command(f"client-kill {client.client_id} RESTART")
+                done |= any(line.startswith("SUCCESS") for line in lines)
+        return done
+
 
 def read_status_file(path: Path | None = None) -> tuple[list[ClientStatus], float] | None:
     """Clients from the status file OpenVPN rewrites every few seconds, and its age in seconds."""
@@ -92,6 +107,7 @@ def parse_status(lines: list[str]) -> list[ClientStatus]:
                 bytes_received=int(cols[5] or 0),
                 bytes_sent=int(cols[6] or 0),
                 connected_since=float(cols[8] or 0),
+                client_id=int(cols[10]) if len(cols) > 10 and cols[10].isdigit() else -1,
             )
         )
     return clients

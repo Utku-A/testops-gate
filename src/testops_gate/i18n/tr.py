@@ -605,4 +605,8 @@ TR: dict[str, str] = {
     "Another firewall drops forwarded traffic; allowed VPN traffic through: {where}": "Başka bir güvenlik duvarı yönlendirilen trafiği engelliyor; VPN trafiğine izin verildi: {where}",
     "Forwarding through other firewalls": "Diğer güvenlik duvarlarından geçiş",
     "{where} drops VPN traffic (Docker or ufw?): no internet in full tunnel, no internal hosts. testops-gate repair adds an exception (testops-gated keeps it).": "{where} VPN trafiğini engelliyor (Docker ya da ufw?): full tünelde internet, iç hostlara erişim olmaz. testops-gate repair bir istisna ekler (testops-gated korur).",
+    # --- reconnect ---
+    "If connected, the user reconnects now to apply tunnel mode or address changes.": "Bağlıysa kullanıcı, tünel modu veya adres değişikliği uygulansın diye hemen yeniden bağlanır.",
+    "No connected user was affected; others get it when they connect.": "Bağlı kullanıcılardan etkilenen olmadı; diğerleri bağlandıklarında alır.",
+    "Reconnected now: {names}": "Hemen yeniden bağlandı: {names}",
 }

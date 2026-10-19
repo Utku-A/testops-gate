@@ -1157,8 +1157,9 @@ class SettingsPage(Page):
         mode = "full" if event.pressed.id == "mode-full" else "split"
         if mode == self.tg.ctx.cfg.tunnel.mode:
             return
-        if await self.tg.run_op(self.tg.ctx.set_tunnel_mode, mode) is not None:
-            self.tg.tunnel_changed()
+        reconnected = await self.tg.run_op(self.tg.ctx.set_tunnel_mode, mode)
+        if reconnected is not None:
+            self.tg.tunnel_changed(reconnected if isinstance(reconnected, list) else [])
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":

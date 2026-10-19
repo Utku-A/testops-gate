@@ -3,6 +3,14 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.4.3 — 2026-10-19
+
+- Switching the tunnel mode (split ↔ full) now applies to connected users at once: the users it
+  affects are told to reconnect (OpenVPN `client-kill … RESTART`) and come back within seconds with
+  the new routes; with username + password they are not asked for it again. The same happens when
+  one user's tunnel mode or VPN address is edited. `testops-gate tunnel set MODE --no-reconnect`
+  keeps the old behaviour
+
 ## 0.4.2 — 2026-10-19
 
 - Full tunnel had no internet on servers where another firewall drops forwarded traffic: Docker

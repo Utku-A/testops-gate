@@ -1,6 +1,6 @@
 [project]
 name = "testops-gate"
-version = "0.4.2"
+version = "0.4.3"
 description = "TestOps Gate: OpenVPN private network with a terminal dashboard, internal DNS, per-user logs and security monitoring"
 readme = "README.md"
 requires-python = ">=3.10"

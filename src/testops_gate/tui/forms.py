@@ -87,7 +87,8 @@ class UserForm(FormScreen):
                 elif self.cert_only:
                     yield Label(T("Certificate only: the profile alone is enough to connect."), classes="hint warning")
             else:
-                yield Label(T("Changes apply when the user reconnects."), classes="hint")
+                yield Label(T("If connected, the user reconnects now to apply tunnel mode or address changes."),
+                            classes="hint")
             yield Label("", id="f-error")
             yield self.buttons()
 

@@ -325,7 +325,7 @@ def cmd_user(args: argparse.Namespace) -> int:
     elif action == "edit":
         ctx.update_user(args.name, email=args.email, mode=args.mode, vpn_ip=args.ip, note=args.note)
         print(T("{name} updated", name=args.name))
-        print(T("Changes apply when the user reconnects."))
+        print(T("If connected, the user reconnects now to apply tunnel mode or address changes."))
     elif action == "disable":
         kicked = ctx.set_user_enabled(args.name, False)
         print(T("{name} disabled", name=args.name) + (T(" · disconnected") if kicked else ""))
@@ -383,9 +383,14 @@ def cmd_host(args: argparse.Namespace) -> int:
 def cmd_tunnel(args: argparse.Namespace) -> int:
     ctx = open_context()
     if args.tunnel_action == "set":
-        ctx.set_tunnel_mode(args.mode)
+        reconnected = ctx.set_tunnel_mode(args.mode, reconnect=not args.no_reconnect)
         print(T("Tunnel mode: {mode}", mode=args.mode))
-        print(T("Applied to connected users when they reconnect."))
+        if args.no_reconnect:
+            print(T("Applied to connected users when they reconnect."))
+        elif reconnected:
+            print(T("Reconnected now: {names}", names=", ".join(reconnected)))
+        else:
+            print(T("No connected user was affected; others get it when they connect."))
     elif args.tunnel_action == "routes":
         if args.routes is not None:
             ctx.set_extra_routes(args.routes)
@@ -703,7 +708,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("tunnel", help="tunnel mode (split / full)")
     ts = p.add_subparsers(dest="tunnel_action")
     ts.add_parser("show")
-    ts.add_parser("set").add_argument("mode", choices=TUNNEL_MODES)
+    a = ts.add_parser("set", help="split or full; connected users it affects reconnect at once")
+    a.add_argument("mode", choices=TUNNEL_MODES)
+    a.add_argument("--no-reconnect", action="store_true", help="apply only when users reconnect themselves")
     ts.add_parser("routes", help="extra networks routed via the VPN in split mode").add_argument(
         "routes", nargs="*", default=None)
 
