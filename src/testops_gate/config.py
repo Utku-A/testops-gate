@@ -85,6 +85,14 @@ class TunnelConfig:
 
 
 @dataclass
+class NodesConfig:
+    """Servers that join the VPN (`testops-gate node add`)."""
+    domain: str = "internal"  # node web-01 is reachable as web-01.internal
+    enroll_port: int = 8443  # TCP port of the join service, open only while a join token is waiting
+    token_minutes: int = 60
+
+
+@dataclass
 class AuthConfig:
     mode: str = "user-password"
 
@@ -156,6 +164,7 @@ class Config:
     tunnel: TunnelConfig = field(default_factory=TunnelConfig)
     dns: DnsConfig = field(default_factory=DnsConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    nodes: NodesConfig = field(default_factory=NodesConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)

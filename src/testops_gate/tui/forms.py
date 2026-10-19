@@ -517,3 +517,66 @@ class RepairDialog(ModalScreen[bool]):
         self.query_one("#close", Button).disabled = False
         self.query_one("#r-run", Button).disabled = False
         self.query_one("#close", Button).focus()
+
+
+class NodeForm(FormScreen):
+    """Name of a server to join, and how long its join command works."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog") as dialog:
+            dialog.border_title = T("Add a server")
+            yield Label(T("Server name"), classes="field-label")
+            yield Input(placeholder=T("e.g. web-01"), restrict=r"[a-z0-9-]*", max_length=32, id="f-name")
+            yield Label(T("Join command works for"), classes="field-label")
+            yield FormSelect([(T("15 minutes"), "15"), (T("1 hour"), "60"), (T("4 hours"), "240"), (T("1 day"), "1440")],
+                             value="60", allow_blank=False, id="f-minutes")
+            yield Label(T("You get a one-time command to run on that server; its key is made there."), classes="hint")
+            yield Label("", id="f-error")
+            yield self.buttons()
+
+    def collect(self) -> dict:
+        name = self.query_one("#f-name", Input).value.strip()
+        if not name:
+            raise ValidationError(T("Server name cannot be empty"))
+        return {"name": name, "minutes": int(self.query_one("#f-minutes", Select).value)}
+
+
+class JoinDialog(ModalScreen[None]):
+    """The one-time join command for a server, with what has to be open for it."""
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "copy", "Copy")]
+
+    def __init__(self, name: str, command: str, until: str, port: int) -> None:
+        super().__init__()
+        self._name, self._command, self._until, self._port = name, command, until, port
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog wide") as dialog:
+            dialog.border_title = T("Join command · {name}", name=self._name)
+            yield Label(T("Run this on {name} (once, until {until}):", name=self._name, until=self._until))
+            yield Static(Text(self._command, style="bold #3fb950"), id="join-command")
+            yield Label(T("Open {port}/tcp to this VPN server in the cloud provider's firewall while joining: the "
+                          "server connects there once. The join service stops by itself afterwards.", port=self._port),
+                        classes="hint warning")
+            yield Label(T("Selecting it with the mouse may break the line: press c to copy it. If your terminal does "
+                          "not allow that, create it in a shell instead: sudo testops-gate node add {name}",
+                          name=self._name), classes="hint")
+            with Horizontal(classes="dialog-buttons"):
+                yield Button(T("Copy  c"), id="copy")
+                yield Button(T("Close"), variant="primary", id="close")
+
+    def on_mount(self) -> None:
+        self.query_one("#close", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "copy":
+            self.action_copy()
+        else:
+            self.dismiss(None)
+
+    def action_copy(self) -> None:
+        self.app.copy_to_clipboard(self._command)
+        self.notify(T("Copied to the clipboard"))
+
+    def action_close(self) -> None:
+        self.dismiss(None)

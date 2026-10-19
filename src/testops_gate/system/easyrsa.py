@@ -70,6 +70,11 @@ class EasyRSA:
     def build_client(self, name: str, days: int) -> None:
         self._run("build-client-full", name, "nopass", EASYRSA_CERT_EXPIRE=str(days))
 
+    def sign_request(self, name: str, csr_path: str, days: int) -> None:
+        """Issue a client certificate for a request made elsewhere: the private key stays there."""
+        self._run("import-req", csr_path, name)
+        self._run("sign-req", "client", name, EASYRSA_CERT_EXPIRE=str(days))
+
     def revoke(self, name: str) -> None:
         self._run("revoke", name)
 

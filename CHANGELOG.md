@@ -3,6 +3,25 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.5.0 — 2026-10-20
+
+- Servers in the VPN: `testops-gate node add web-01` (or Servers → `a` in the dashboard) prints a
+  one-time join command; run it on that server and it joins the VPN:
+
+      curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- join tgj1_…
+
+  - the server installs the small `testops-gate-node` package (OpenVPN client only), makes its
+    own key and sends only a certificate request: no `.ovpn` file to copy, no key in transit
+  - the join command works once, for that name, until it expires (1 hour by default); it carries
+    the VPN server's CA fingerprint, so a joining server cannot be tricked into a fake server
+  - the join service listens on 8443/tcp only while a join command is waiting; the output says
+    to open that port in the cloud firewall
+  - servers reach each other and VPN users reach them by name (`web-01.internal`); servers cannot
+    open connections to users; a server's own traffic and DNS are not changed
+  - the connection starts at boot and reconnects; `testops-gate node remove` revokes it
+- The dashboard menu has a new Servers page (3); Hosts, Security, Logs and Settings move to 4–7
+- Switches that are off are now visible on the dark theme (grey knob on a lighter track)
+
 ## 0.4.3 — 2026-10-19
 
 - Switching the tunnel mode (split ↔ full) now applies to connected users at once: the users it

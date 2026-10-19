@@ -19,7 +19,8 @@ if ! id=$(api "$API/releases/tags/$TAG" 2>/dev/null | json_id); then
         "$TAG" "$VERSION" "${GIT_COMMIT:-main}" "$R/NOTES.md")
     id=$(api -X POST "$API/releases" -d "$body" | json_id)
 fi
-for file in "testops-gate_${VERSION}_all.deb" testops-gate_all.deb SHA256SUMS VERSION install.sh; do
+for file in "testops-gate_${VERSION}_all.deb" testops-gate_all.deb "testops-gate-node_${VERSION}_all.deb" \
+        testops-gate-node_all.deb SHA256SUMS VERSION install.sh; do
     echo "uploading $file"
     api -X POST -H "Content-Type: application/octet-stream" --data-binary "@$R/$file" \
         "https://uploads.github.com/repos/$GITHUB_REPO/releases/$id/assets?name=$file" >/dev/null

@@ -43,12 +43,16 @@ def write_if_changed(path: Path, content: str, mode: int = 0o644) -> bool:
 def write_ccd(cfg: Config, store: Store) -> bool:
     hosts = store.hosts()
     users = store.users()
+    nodes = store.nodes()
     changed = False
     P.ccd_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(P.ccd_dir, 0o755)
     for user in users:
         changed |= write_if_changed(P.ccd_dir / user.name, openvpn.ccd(cfg, user, hosts))
-    names = {u.name for u in users}
+    for node in nodes:
+        changed |= write_if_changed(P.ccd_dir / node.cn, openvpn.node_ccd(cfg, node))
+    # ccd-exclusive: a client without a file here is refused, so stale files go
+    names = {u.name for u in users} | {n.cn for n in nodes}
     for entry in P.ccd_dir.iterdir():
         if entry.is_file() and entry.name not in names:
             entry.unlink()
@@ -69,7 +73,7 @@ def write_auth(cfg: Config, store: Store) -> bool:
                 changed = True
         return changed
     changed = write_if_changed(P.auth_script, openvpn.AUTH_SCRIPT, 0o755)
-    changed |= write_if_changed(P.auth_passwords, openvpn.passwords_file(store.users()), 0o640)
+    changed |= write_if_changed(P.auth_passwords, openvpn.passwords_file(store.users(), store.nodes()), 0o640)
     if os.geteuid() == 0:
         try:
             os.chown(P.auth_passwords, 0, grp.getgrnam("nogroup").gr_gid)
@@ -89,9 +93,10 @@ def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
         changed.add("auth")
     if write_if_changed(P.unbound_conf, unbound.main_conf(cfg)):
         changed.add("unbound")
-    if write_if_changed(P.unbound_hosts_conf, unbound.hosts_conf(store.hosts())):
+    node_names = [(f"{n.name}.{cfg.nodes.domain}", n.vpn_ip) for n in store.nodes() if n.enabled]
+    if write_if_changed(P.unbound_hosts_conf, unbound.hosts_conf(store.hosts(), node_names)):
         changed.add("hosts")
-    if write_if_changed(P.nft_file, system.nftables(cfg), 0o640):
+    if write_if_changed(P.nft_file, system.nftables(cfg, [n.vpn_ip for n in store.nodes()]), 0o640):
         changed.add("nftables")
     if write_if_changed(P.sysctl_file, system.sysctl()):
         changed.add("sysctl")

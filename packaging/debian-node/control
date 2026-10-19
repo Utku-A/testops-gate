@@ -1,0 +1,13 @@
+Package: testops-gate-node
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: all
+Maintainer: @MAINTAINER@
+Installed-Size: @SIZE@
+Homepage: https://testopscenter.com
+Depends: python3 (>= 3.8), openvpn (>= 2.5), openssl, iproute2, ca-certificates, systemd
+Description: TestOps Gate node - join a server to a TestOps Gate VPN
+ Joins this server to a TestOps Gate VPN with the one-time command that
+ `testops-gate node add NAME` prints on the VPN server. The private key is
+ made on this server; the connection runs as openvpn-client@testops-gate.

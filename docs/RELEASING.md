@@ -27,7 +27,7 @@ https://testopscenter.com/testops-gate/v0.2.0/   the same files for every versio
 
 | Script | Does |
 |---|---|
-| `packaging/build-deb.sh` | Builds `dist/testops-gate_<version>_all.deb` in a Debian container |
+| `packaging/build-deb.sh` | Builds `dist/testops-gate_<version>_all.deb` and `dist/testops-gate-node_<version>_all.deb` (what joining servers install) in a Debian container |
 | `packaging/release-assets.sh` | Collects the release files and `NOTES.md` (from `CHANGELOG.md`) in `dist/release/`; checks that a tag matches the version |
 | `packaging/publish-site.sh` | Uploads them to the site's release API with a token, then publishes the version |
 | `packaging/publish-github.sh` | Optional GitHub release with the same files and notes |

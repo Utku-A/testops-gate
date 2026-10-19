@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# OpenVPN up script of testops-gate-node: names in the VPN domain resolve through the VPN's DNS.
+# Only with systemd-resolved; never fails the connection.
+command -v resolvectl >/dev/null 2>&1 || exit 0
+[ -n "${dev:-}" ] && [ -n "${TG_DNS:-}" ] || exit 0
+resolvectl dns "$dev" "$TG_DNS" >/dev/null 2>&1 || true
+resolvectl domain "$dev" "~${TG_DOMAIN:-internal}" >/dev/null 2>&1 || true
+exit 0

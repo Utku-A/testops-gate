@@ -64,8 +64,13 @@ def _fqdn(name: str) -> str:
     return name.rstrip(".") + "."
 
 
-def hosts_conf(hosts: list[Host]) -> str:
+def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = ()) -> str:
+    """nodes: (fqdn, vpn ip) of the servers in the VPN, e.g. ("web-01.internal", "10.8.0.50")."""
     lines = ["server:"]
+    for name, ip in nodes:
+        owner = _fqdn(name)
+        lines.append(f'    local-zone: "{owner}" transparent')
+        lines.append(f'    local-data: "{owner} 300 IN A {ip}"')
     for host in hosts:
         if host.wildcard:
             # *.preview.internal: the apex and every name below it get the same answer

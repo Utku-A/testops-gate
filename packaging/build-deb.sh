@@ -18,3 +18,4 @@ docker run --rm \
     -e VERSION="$VERSION" -e OWNER="$(id -u):$(id -g)" -e DEB_MAINTAINER="${DEB_MAINTAINER:-}" \
     debian:12 bash /src/packaging/build-inside.sh
 echo "dist/testops-gate_${VERSION}_all.deb"
+echo "dist/testops-gate-node_${VERSION}_all.deb"

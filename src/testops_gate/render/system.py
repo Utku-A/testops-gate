@@ -16,7 +16,7 @@ def _elements(values: list[str]) -> str:
     return f" elements = {{ {', '.join(values)} }};" if values else ""
 
 
-def nftables(cfg: Config) -> str:
+def nftables(cfg: Config, node_ips: list[str] = ()) -> str:
     sec = cfg.security
     unauth = sec.category_enabled("unauth") and sec.blocked_networks
     ports = sec.category_enabled("ports") and sec.forbidden_ports
@@ -37,6 +37,8 @@ def nftables(cfg: Config) -> str:
         f"    set denied {{ type ipv4_addr . ipv4_addr . inet_service; flags dynamic, timeout; timeout {DENY_TIMEOUT}; }}",
         f"    set forbidden {{ type ipv4_addr . ipv4_addr . inet_service; flags dynamic, timeout; timeout {DENY_TIMEOUT}; }}",
         f"    set doh_resolvers {{ type ipv4_addr; flags interval;{_elements(PUBLIC_RESOLVERS if enforce else [])} }}",
+        "    # Servers in the VPN (testops-gate node): they reach each other, users reach them",
+        f"    set node_ips {{ type ipv4_addr;{_elements(sorted(node_ips))} }}",
         "",
         "    chain input {",
         "        type filter hook input priority filter; policy accept;",
@@ -74,6 +76,8 @@ def nftables(cfg: Config) -> str:
         ]
     lines += [
         "        ct state established,related accept",
+        "        # A server must not open connections to users: a compromised one cannot move on to them",
+        f'        iifname "{TUN_DEVICE}" oifname "{TUN_DEVICE}" ip saddr @node_ips ip daddr != @node_ips drop',
         f'        iifname "{TUN_DEVICE}" accept',
         "    }",
         "",

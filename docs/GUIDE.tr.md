@@ -222,6 +222,42 @@ Yalnızca sertifika modunda profil tek başına bağlanmaya yettiği için gönd
 kullanıcıya içe aktardıktan sonra silmesini söyler. Profili OpenVPN Connect, `openvpn` veya Tunnelblick gibi bir
 istemciye aktarın.
 
+## Sunucular (VPN'e katılan sunucular)
+
+Kullanıcıların yanında sunucular da VPN'e katılabilir; birbirlerine ve kullanıcılar onlara VPN üzerinden erişir.
+
+<p align="center"><img src="assets/screenshots/tr/servers.png" width="900" alt="Sunucular: VPN'e katılan sunucular, VPN adresi, DNS adı ve durumu"></p>
+
+```bash
+sudo testops-gate node add web-01        # dashboard: Sunucular → a
+```
+
+Çıktıdaki tek satırı **katılacak sunucuda** çalıştırın:
+
+```bash
+curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- join tgj1_…
+```
+
+<p align="center"><img src="assets/screenshots/tr/join.png" width="900" alt="Yeni sunucu için tek seferlik katılma komutu"></p>
+
+- Katılan sunucuya küçük `testops-gate-node` paketi kurulur (yalnızca OpenVPN istemcisi). Özel anahtar o sunucuda
+  oluşturulur, VPN sunucusuna yalnızca sertifika isteği gider: `.ovpn` dosyası taşımak gerekmez.
+- Komut **bir kez** ve süresi dolana kadar (varsayılan 1 saat) çalışır. İçinde VPN sunucusunun CA parmak izi vardır;
+  katılan sunucu sahte bir sunucuya bağlanmaz.
+- Katılma servisi yalnızca bekleyen bir komut varken **8443/tcp** üzerinde dinler: katılma sırasında bulut güvenlik
+  duvarında bu porta izin verin. İş bitince servis kendiliğinden durur.
+- Sunucular `web-01.internal` adıyla DNS'e girer. Sunucular birbirine, kullanıcılar sunuculara erişir; sunucular
+  kullanıcılara yeni bağlantı açamaz. Sunucunun kendi internet trafiği ve DNS'i değişmez (systemd-resolved varsa
+  yalnızca `*.internal` adları VPN üzerinden çözülür).
+- Bağlantı açılışta başlar, koparsa kendiliğinden yeniden bağlanır.
+
+```bash
+sudo testops-gate node list               # durum: çevrimiçi / çevrimdışı / katılmayı bekliyor
+sudo testops-gate node remove web-01      # sertifikayı iptal eder
+sudo testops-gate-node status             # katılan sunucuda
+sudo testops-gate-node leave              # katılan sunucuda: VPN'den çık
+```
+
 ## Tünel modu
 
 | | `split` (varsayılan) | `full` |
@@ -351,7 +387,7 @@ testops-gate logs     USER|security|audit [--since 2h] [--day D] [--kind dns] [-
 | Tuş | İşlem |
 |---|---|
 | `↑ ↓` | Menüde / listede gezin |
-| `enter`, `→` | Bölüme gir · `esc`, `←` menüye dön · `1`–`6` doğrudan atla |
+| `enter`, `→` | Bölüme gir · `esc`, `←` menüye dön · `1`–`7` doğrudan atla |
 | `a` `e` `x` `space` | Ekle · düzenle · sil · aç/kapat |
 | `o` `r` `p` `/` | Profil dışa aktar · sertifika yenile · yeni parola · ara (Kullanıcılar) |
 | `t` | DNS testi (Hostlar), log filtresi (Loglar), test bildirimi (kanal tablosu) |

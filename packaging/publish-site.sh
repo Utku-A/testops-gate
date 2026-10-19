@@ -31,7 +31,8 @@ printf 'Authorization: Bearer %s\n' "$SITE_TOKEN" > "$HEADER"
 api() { curl -sS --fail-with-body --retry 3 -H @"$HEADER" "$@"; }
 
 echo "Publishing testops-gate $VERSION to $SITE_URL"
-for file in "testops-gate_${VERSION}_all.deb" testops-gate_all.deb SHA256SUMS VERSION install.sh NOTES.md; do
+for file in "testops-gate_${VERSION}_all.deb" testops-gate_all.deb "testops-gate-node_${VERSION}_all.deb" \
+        testops-gate-node_all.deb SHA256SUMS VERSION install.sh NOTES.md; do
     echo "  uploading $file"
     api -T "$R/$file" "$API/files/$file" >/dev/null
 done

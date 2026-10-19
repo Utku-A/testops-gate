@@ -29,7 +29,16 @@ from testops_gate.core.context import Context, ValidationError
 from testops_gate.db import Alert, Host, LiveClient, User
 from testops_gate.i18n import T, current_language, set_language
 from testops_gate.system import netinfo, services
-from testops_gate.tui.pages import DashboardPage, HostsPage, LogsPage, Page, SecurityPage, SettingsPage, UsersPage
+from testops_gate.tui.pages import (
+    DashboardPage,
+    HostsPage,
+    LogsPage,
+    NodesPage,
+    Page,
+    SecurityPage,
+    SettingsPage,
+    UsersPage,
+)
 from testops_gate.tui.theme import CSS, GITHUB_DARK
 from testops_gate.tui.widgets import HelpScreen, all_dom_subclasses, localize_classes, localized_bindings
 from testops_gate.tui.wizard import InstallScreen
@@ -37,10 +46,11 @@ from testops_gate.tui.wizard import InstallScreen
 NAV = [
     ("dashboard", "1", "Dashboard"),
     ("users", "2", "Users"),
-    ("hosts", "3", "Hosts"),
-    ("security", "4", "Security"),
-    ("logs", "5", "Logs"),
-    ("settings", "6", "Settings"),
+    ("nodes", "3", "Servers"),
+    ("hosts", "4", "Hosts"),
+    ("security", "5", "Security"),
+    ("logs", "6", "Logs"),
+    ("settings", "7", "Settings"),
 ]
 TICK = 2.0
 SERVICES_EVERY = 3  # ticks
@@ -52,7 +62,8 @@ class Snapshot:
     users: list[User] = field(default_factory=list)
     hosts: list[Host] = field(default_factory=list)
     alerts: list[Alert] = field(default_factory=list)  # last 24 h, newest first
-    live: dict[str, LiveClient] = field(default_factory=dict)
+    live: dict[str, LiveClient] = field(default_factory=dict)  # users only
+    nodes: list[dict] = field(default_factory=list)  # core.nodes.node_rows
     traffic: dict[str, tuple[int, int]] = field(default_factory=dict)  # today
     services: dict[str, bool] = field(default_factory=dict)
     throughput: deque = field(default_factory=lambda: deque(maxlen=THROUGHPUT_SAMPLES))  # bytes/s
@@ -84,12 +95,13 @@ class Shell(Vertical):
                     id="nav",
                 )
                 with Vertical(id="sidebar-bottom"):
-                    yield Label(T("↑↓   move\n↵ →  open\nesc  menu\n1-6  jump\n?    help"), id="sidebar-help")
+                    yield Label(T("↑↓   move\n↵ →  open\nesc  menu\n1-7  jump\n?    help"), id="sidebar-help")
                     yield Label(Text.assemble(("⌕ ", "bold #58a6ff"), (f"{BRAND}™", "bold"), ("\ntestopscenter.com", "dim")),
                                 id="sidebar-brand")
             with ContentSwitcher(id="content", initial=self.tg.page):
                 yield DashboardPage(id="dashboard")
                 yield UsersPage(id="users")
+                yield NodesPage(id="nodes")
                 yield HostsPage(id="hosts")
                 yield SecurityPage(id="security")
                 yield LogsPage(id="logs")
@@ -234,7 +246,10 @@ class GateApp(App):
         snap.users = store.users()
         snap.hosts = store.hosts()
         snap.alerts = store.alerts(since=time.time() - 86400, limit=500)
-        snap.live = store.live_clients()
+        snap.live = {name: c for name, c in store.live_clients().items() if not name.endswith(".node")}
+        from testops_gate.core import nodes
+
+        snap.nodes = nodes.node_rows(self.ctx)
         snap.traffic = store.traffic(date.today().isoformat())
         total = sum(c.rx + c.tx for c in snap.live.values())
         now = time.monotonic()

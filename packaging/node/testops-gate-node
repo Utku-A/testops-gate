@@ -1,0 +1,228 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Halis Utku Aladağ (TestOps Center, https://testopscenter.com)
+"""testops-gate-node: join this server to a TestOps Gate VPN.
+
+    testops-gate-node join tgj1_...   (the command `testops-gate node add NAME` prints)
+    testops-gate-node status
+    testops-gate-node leave
+
+The private key is made here and never leaves this server: the VPN server only signs a certificate
+request. Before anything is sent, the join service is checked against the CA fingerprint in the
+join command. The connection runs as openvpn-client@testops-gate (starts at boot, reconnects).
+This server's own traffic and DNS are not changed; names in the VPN domain (e.g. *.internal)
+resolve through the VPN when systemd-resolved is used.
+
+Standard library only: this package must stay small on the servers it is installed on.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import NoReturn
+
+CONF_DIR = Path("/etc/testops-gate-node")
+CLIENT_CONF = Path("/etc/openvpn/client/testops-gate.conf")
+UNIT = "openvpn-client@testops-gate.service"
+DEVICE = "tgnode"
+DNS_UP = "/usr/lib/testops-gate-node/dns-up"
+TIMEOUT = 20
+
+
+def say(msg: str) -> None:
+    print(f"  {msg}", flush=True)
+
+
+def fail(msg: str, *hints: str) -> NoReturn:
+    print(f"  ✗ {msg}", file=sys.stderr)
+    for hint in hints:
+        print(f"    {hint}", file=sys.stderr)
+    sys.exit(1)
+
+
+def run(*cmd: str, check: bool = True) -> subprocess.CompletedProcess:
+    proc = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if check and proc.returncode:
+        fail(f"{' '.join(cmd[:3])} failed: {(proc.stderr or proc.stdout).strip()[-300:]}")
+    return proc
+
+
+def decode(blob: str) -> dict:
+    if not blob.startswith("tgj1_"):
+        fail("this is not a join command from `testops-gate node add`")
+    raw = blob[5:]
+    try:
+        data = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+        return {"endpoint": data["e"], "token": data["t"], "ca_hash": data["h"], "name": data["n"]}
+    except (ValueError, KeyError):
+        fail("the join command is damaged; copy it again from `testops-gate node add`")
+
+
+def der_sha256(pem: str) -> str:
+    start = pem.index("-----BEGIN CERTIFICATE-----")
+    end = pem.index("-----END CERTIFICATE-----", start) + len("-----END CERTIFICATE-----")
+    return hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem[start:end])).hexdigest()
+
+
+def request(url: str, context: ssl.SSLContext, body: dict | None = None) -> bytes:
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=context) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        try:
+            reason = json.loads(exc.read()).get("error", exc.reason)
+        except ValueError:
+            reason = exc.reason
+        fail(f"the VPN server refused: {reason}", "Create a new join command: sudo testops-gate node add NAME")
+    except (urllib.error.URLError, OSError) as exc:
+        host = url.split("/")[2]
+        fail(f"cannot reach the join service at {host}: {getattr(exc, 'reason', exc)}",
+             f"Open {host.rsplit(':', 1)[-1]}/tcp to the VPN server in its cloud firewall while joining.")
+
+
+def write(path: Path, text: str, mode: int = 0o600) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+
+def client_conf(s: dict) -> str:
+    proto = "udp" if s["proto"] == "udp" else "tcp-client"
+    return f"""# Written by `testops-gate-node join`: this server is {s['name']} ({s['vpn_ip']}) in the VPN.
+client
+dev {DEVICE}
+dev-type tun
+proto {proto}
+remote {s['remote']} {s['port']}
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+verify-x509-name {s['server_name']} name
+auth SHA256
+data-ciphers {s['data_ciphers']}
+tls-client
+tls-version-min 1.2
+tls-cipher {s['tls_cipher']}
+ca {CONF_DIR}/ca.crt
+cert {CONF_DIR}/client.crt
+key {CONF_DIR}/client.key
+tls-crypt {CONF_DIR}/tls-crypt.key
+auth-user-pass {CONF_DIR}/auth
+# This server's own traffic and DNS stay as they are
+pull-filter ignore "redirect-gateway"
+pull-filter ignore "dhcp-option"
+# Names in the VPN domain resolve through the VPN (systemd-resolved)
+script-security 2
+setenv TG_DNS {s['dns']}
+setenv TG_DOMAIN {s['domain']}
+up {DNS_UP}
+verb 3
+"""
+
+
+def join(blob: str) -> int:
+    info = decode(blob)
+    if os.geteuid() != 0:
+        fail("run as root: sudo testops-gate-node join ...")
+    if CLIENT_CONF.exists():
+        fail("this server has already joined a VPN", "To join again: sudo testops-gate-node leave")
+    name, endpoint = info["name"], info["endpoint"]
+    base = f"https://{endpoint}"
+    say(f"Joining as {name} via {endpoint}")
+
+    CONF_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(CONF_DIR, 0o700)
+    key, csr = CONF_DIR / "client.key", CONF_DIR / "client.csr"
+    run("openssl", "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(key))
+    os.chmod(key, 0o600)
+    run("openssl", "req", "-new", "-key", str(key), "-subj", f"/CN={name}.node", "-out", str(csr))
+    say("✓ Key made on this server (it is not sent anywhere)")
+
+    # Trust on the hash in the join command, not on the network: fetch the CA, compare, then use it
+    insecure = ssl.create_default_context()
+    insecure.check_hostname = False
+    insecure.verify_mode = ssl.CERT_NONE
+    ca = request(f"{base}/ca", insecure).decode()
+    if der_sha256(ca) != info["ca_hash"]:
+        fail("the join service's certificate does not match the join command",
+             "Someone may be intercepting the connection, or the join command is from another VPN server.")
+    verified = ssl.create_default_context(cadata=ca)
+    verified.check_hostname = False  # the CA is pinned; the address may be an IP or any name
+    settings = json.loads(request(f"{base}/join", verified, {"token": info["token"], "csr": csr.read_text()}))
+    csr.unlink()
+    say(f"✓ Certificate issued · VPN address {settings['vpn_ip']}")
+
+    write(CONF_DIR / "ca.crt", settings["ca"], 0o644)
+    write(CONF_DIR / "client.crt", settings["cert"], 0o644)
+    write(CONF_DIR / "tls-crypt.key", settings["tls_crypt"])
+    write(CONF_DIR / "auth", f"{settings['username']}\n{settings['password']}\n")
+    write(CONF_DIR / "node.json", json.dumps({k: settings[k] for k in ("name", "vpn_ip", "fqdn", "remote")}), 0o644)
+    write(CLIENT_CONF, client_conf(settings))
+    run("systemctl", "enable", "--now", UNIT)
+
+    for _ in range(45):
+        if settings["vpn_ip"] in run("ip", "-4", "addr", "show", "dev", DEVICE, check=False).stdout:
+            break
+        time.sleep(1)
+    else:
+        fail("joined, but the VPN connection did not come up within 45 seconds",
+             f"Check: journalctl -u {UNIT} -n 30")
+    print()
+    say(f"✓ {name} is in the VPN as {settings['vpn_ip']} ({settings['fqdn']})")
+    say("Other servers and VPN users reach it by that name. The connection starts at boot.")
+    return 0
+
+
+def status() -> int:
+    if not CLIENT_CONF.exists():
+        print("Not joined. Join with the command from `testops-gate node add NAME` on the VPN server.")
+        return 1
+    node = json.loads((CONF_DIR / "node.json").read_text())
+    active = run("systemctl", "is-active", UNIT, check=False).stdout.strip() == "active"
+    up = node["vpn_ip"] in run("ip", "-4", "addr", "show", "dev", DEVICE, check=False).stdout
+    print(f"{node['name']} · {node['fqdn']} · {node['vpn_ip']} via {node['remote']}")
+    print(f"connection: {'up' if active and up else 'down'} ({UNIT}: {'active' if active else 'inactive'})")
+    return 0 if active and up else 3
+
+
+def leave() -> int:
+    if os.geteuid() != 0:
+        fail("run as root: sudo testops-gate-node leave")
+    name = json.loads((CONF_DIR / "node.json").read_text())["name"] if (CONF_DIR / "node.json").exists() else "NAME"
+    run("systemctl", "disable", "--now", UNIT, check=False)
+    CLIENT_CONF.unlink(missing_ok=True)
+    for path in CONF_DIR.glob("*"):
+        path.unlink()
+    print(f"Left the VPN. Also remove it on the VPN server: sudo testops-gate node remove {name}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) >= 2 and argv[0] == "join":
+        return join(argv[1])
+    if argv[:1] == ["status"]:
+        return status()
+    if argv[:1] == ["leave"]:
+        return leave()
+    print(__doc__.split("\n\n")[1] if __doc__ else "")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

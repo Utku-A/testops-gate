@@ -25,6 +25,14 @@ TG_RELEASES="${TESTOPS_GATE_RELEASES:-https://testopscenter.com/testops-gate}"
 TG_RELEASES="${TG_RELEASES%/}"
 TG_WANTED="${TESTOPS_GATE_VERSION:-latest}"
 TG_ASSET="testops-gate_all.deb"
+TG_PACKAGE="testops-gate"
+TG_SUBTITLE="Private OpenVPN network"
+# `sh -s -- join tgj1_...`: this server joins an existing VPN (small package, no VPN server parts)
+if [ "${1:-}" = join ]; then
+    TG_ASSET="testops-gate-node_all.deb"
+    TG_PACKAGE="testops-gate-node"
+    TG_SUBTITLE="Join this server to a TestOps Gate VPN"
+fi
 
 # --- output ------------------------------------------------------------------
 
@@ -38,7 +46,7 @@ fi
 
 banner() {
     printf '\n  %s◆ TestOps Gate%s\n' "$BLUE$B" "$R"
-    printf '    %sPrivate OpenVPN network · by TestOps Center™ · testopscenter.com%s\n\n' "$D" "$R"
+    printf '    %s%s · by TestOps Center™ · testopscenter.com%s\n\n' "$D" "$TG_SUBTITLE" "$R"
 }
 # step LABEL TEXT: a running step (shown on a terminal, replaced by ok/fail)
 step() { [ -z "$TTY" ] || printf '  %s…%s %-10s %s%s%s' "$D" "$R" "$1" "$D" "$2" "$R"; }
@@ -143,8 +151,12 @@ ok "Checksum" "SHA-256 verified"
 
 # --- install -----------------------------------------------------------------
 
-TG_BEFORE=$(dpkg-query -W -f='${Version}' testops-gate 2>/dev/null || true)
-step "Install" "apt-get install (dependencies: OpenVPN, Unbound, nftables, …)"
+TG_BEFORE=$(dpkg-query -W -f='${Version}' "$TG_PACKAGE" 2>/dev/null || true)
+if [ "$TG_PACKAGE" = testops-gate-node ]; then
+    step "Install" "apt-get install (dependency: OpenVPN)"
+else
+    step "Install" "apt-get install (dependencies: OpenVPN, Unbound, nftables, …)"
+fi
 export DEBIAN_FRONTEND=noninteractive
 if ! { apt-get update -qq && apt-get install -y -qq "$TG_TMP/$TG_ASSET"; } >"$TG_TMP/apt.log" 2>&1; then
     [ -z "$TTY" ] || printf '\r\033[K'
@@ -153,17 +165,23 @@ if ! { apt-get update -qq && apt-get install -y -qq "$TG_TMP/$TG_ASSET"; } >"$TG
     printf '\n' >&2
     exit 1
 fi
-TG_AFTER=$(dpkg-query -W -f='${Version}' testops-gate 2>/dev/null || echo "?")
+TG_AFTER=$(dpkg-query -W -f='${Version}' "$TG_PACKAGE" 2>/dev/null || echo "?")
 if [ -n "$TG_BEFORE" ] && [ "$TG_BEFORE" != "$TG_AFTER" ]; then
-    ok "Install" "testops-gate $TG_BEFORE → $TG_AFTER"
+    ok "Install" "$TG_PACKAGE $TG_BEFORE → $TG_AFTER"
 else
-    ok "Install" "testops-gate $TG_AFTER"
+    ok "Install" "$TG_PACKAGE $TG_AFTER"
 fi
 
 # --- next --------------------------------------------------------------------
 
 cmd() { printf '      %s%s%s\n' "$B" "$*" "$R"; }
 text() { printf '    %s\n' "$*"; }
+
+if [ "$TG_PACKAGE" = testops-gate-node ]; then
+    [ -n "${2:-}" ] || fail "Join" "the join command is missing" "copy it from: sudo testops-gate node add NAME"
+    printf '\n'
+    exec testops-gate-node join "$2"
+fi
 
 if [ "$#" -gt 0 ]; then
     note "Setting up: testops-gate install $*"

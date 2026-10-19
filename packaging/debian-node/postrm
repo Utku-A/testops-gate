@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+if [ "$1" = "purge" ]; then
+    rm -rf /etc/testops-gate-node
+    rm -f /etc/openvpn/client/testops-gate.conf
+fi
+exit 0

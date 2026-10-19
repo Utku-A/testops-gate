@@ -222,7 +222,8 @@ def uninstall(purge: bool = False, remove_packages: bool = False, log: Log = pri
     """
     packages = config_mod.load().installed_packages if config_mod.exists() else []
     log(T("Stopping services"))
-    for unit in (services.DAEMON_UNIT, services.OPENVPN_UNIT, services.FIREWALL_UNIT, services.SURICATA_UPDATE_TIMER):
+    for unit in (services.DAEMON_UNIT, services.OPENVPN_UNIT, services.FIREWALL_UNIT, services.SURICATA_UPDATE_TIMER,
+                 "testops-gate-enroll.service"):
         services.disable_now(unit)
     if P.suricata_dropin.exists():
         services.disable_now(services.SURICATA_UNIT)

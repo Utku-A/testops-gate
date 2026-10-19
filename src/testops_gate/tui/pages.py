@@ -44,7 +44,9 @@ from testops_gate.tui.forms import (
     ChannelForm,
     ExportForm,
     HostForm,
+    JoinDialog,
     ListForm,
+    NodeForm,
     PasswordForm,
     RepairDialog,
     UninstallDialog,
@@ -187,9 +189,11 @@ class DashboardPage(Page):
                       T("defined hosts only") if cfg.tunnel.mode == "split" else T("all traffic via VPN"))
         mode_card.set_class(cfg.tunnel.mode == "full", "full")
 
+        servers_online = sum(1 for r in snap.nodes if r["state"] == "online")
         details = {
-            services.OPENVPN_UNIT: T("{n} connections · {proto}/{port}", n=len(snap.live),
-                                     proto=cfg.server.protocol, port=cfg.server.port),
+            services.OPENVPN_UNIT: (T("{n} users · {s} servers", n=len(snap.live), s=servers_online) if snap.nodes else
+                                    T("{n} connections · {proto}/{port}", n=len(snap.live),
+                                      proto=cfg.server.protocol, port=cfg.server.port)),
             services.UNBOUND_UNIT: T("{n} host records", n=len(snap.hosts)),
             services.FIREWALL_UNIT: "nftables",
             services.DAEMON_UNIT: T("log collector · security"),
@@ -475,6 +479,86 @@ class UsersPage(Page):
             T("Issue a new certificate for [b]{name}[/b]? The current profile stops working.", name=user.name),
             confirm_label="Renew",
         ), done)
+
+
+# --- Servers --------------------------------------------------------------------
+
+
+class NodesPage(Page):
+    FOCUS_TARGET = "#nodes-table"
+    BINDINGS = [
+        Binding("a", "add", "Add"),
+        Binding("x,delete", "delete", "Remove"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Label(T("Servers in the VPN"), classes="page-title")
+        with panel(T("Servers"), id="nodes-panel"):
+            yield DataTable(id="nodes-table", cursor_type="row", zebra_stripes=True)
+            yield Label(T("Servers reach each other, users reach servers, servers cannot open connections to users. "
+                          "a: add a server"), classes="hint", id="nodes-hint")
+
+    def on_mount(self) -> None:
+        self.query_one("#nodes-table", DataTable).add_columns(
+            T("Server"), "VPN IP", T("DNS name"), T("Status"), T("Real IP"))
+        self.refresh_data()
+
+    def refresh_data(self) -> None:
+        table = self.query_one("#nodes-table", DataTable)
+        cursor = table.cursor_row
+        table.clear()
+        rows = self.tg.snapshot.nodes
+        for r in rows:
+            if r["state"] == "online":
+                state = Text(T("● online"), GREEN)
+            elif r["state"] == "waiting":
+                state = Text(T("◌ waiting to join · until {time}", time=hhmm(r["expires"])), YELLOW)
+            else:
+                state = Text(T("○ offline"), "dim")
+            table.add_row(Text(r["name"], "bold"), r["vpn_ip"] or "—", r["fqdn"], state, r["real_ip"] or "—",
+                          key=r["name"])
+        self.keep_cursor(table, len(rows), cursor)
+        online = sum(1 for r in rows if r["state"] == "online")
+        self.query_one("#nodes-panel").border_subtitle = T("{online} of {total} online", online=online,
+                                                           total=sum(1 for r in rows if r["state"] != "waiting"))
+
+    def selected(self):
+        rows = self.tg.snapshot.nodes
+        row = self.query_one("#nodes-table", DataTable).cursor_row
+        return rows[row] if rows and 0 <= row < len(rows) else None
+
+    def action_add(self) -> None:
+        from testops_gate.core import nodes
+
+        ctx = self.tg.ctx
+
+        def submit(data: dict):
+            token, token_string = nodes.create_join_token(ctx, data["name"], data["minutes"])
+            return token, nodes.join_command(ctx, token, token_string)
+
+        def done(result) -> None:
+            if result:
+                token, command = result
+                self.tg.refresh_snapshot()
+                self.app.push_screen(JoinDialog(token.node, command, hhmm(token.expires), ctx.cfg.nodes.enroll_port))
+
+        self.app.push_screen(NodeForm(submit), done)
+
+    def action_delete(self) -> None:
+        from testops_gate.core import nodes
+
+        row = self.selected()
+        if not row:
+            return
+
+        async def done(confirmed: bool | None) -> None:
+            if confirmed and await self.tg.run_op(nodes.remove_node, self.tg.ctx, row["name"]) is not None:
+                self.tg.refresh_snapshot()
+                self.notify(T("{name} removed · certificate revoked", name=row["name"]), severity="warning")
+
+        self.app.push_screen(ConfirmDialog(T("Remove server"), T(
+            "Remove [b]{name}[/b] from the VPN?\n\n• Its certificate is revoked and it disconnects\n"
+            "• {fqdn} stops resolving", name=row["name"], fqdn=row["fqdn"])), done)
 
 
 # --- Hosts ----------------------------------------------------------------------

@@ -21,6 +21,7 @@
 ## Features
 
 - **VPN users** — one command or one form per user; fixed VPN address, `.ovpn` profile, disable / renew / delete.
+- **Servers** — join a server to the VPN with one command (`testops-gate node add web-01`); servers reach each other by name.
 - **Passwords** — username + password checked by the server (default), a password on the profile, or certificate only.
 - **Internal DNS** — map names to private addresses (`stage.internal → 10.0.5.20`, wildcards, CNAMEs).
 - **Split or full tunnel** — only your internal hosts over the VPN, or all traffic; globally or per user.
@@ -37,6 +38,10 @@
   <tr>
     <td width="50%"><img src="docs/assets/screenshots/security.png" alt="Security: detection categories and recent alerts"><br><sub>Security monitoring</sub></td>
     <td width="50%"><img src="docs/assets/screenshots/logs.png" alt="Logs: one user's sessions, DNS queries and connections"><br><sub>Per-user logs</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/servers.png" alt="Servers: servers joined to the VPN with their address, name and state"><br><sub>Servers in the VPN</sub></td>
+    <td width="50%"><img src="docs/assets/screenshots/join.png" alt="The one-time join command for a new server"><br><sub>Join command</sub></td>
   </tr>
 </table>
 
@@ -73,6 +78,7 @@ sudo testops-gate user export alice -o ~/            # copy the .ovpn to your ho
 sudo testops-gate user passwd alice                  # new password
 sudo testops-gate user send alice                    # email the profile (+ setup steps, never the password)
 sudo testops-gate host add stage.internal 10.0.5.20
+sudo testops-gate node add web-01                    # prints a one-time join command for that server
 sudo testops-gate tunnel set full                    # or: split
 sudo testops-gate settings port 443 --protocol tcp   # move the VPN; every profile is renewed
 sudo testops-gate notify add slack --name '#vpn-alerts' --webhook https://hooks.slack.com/services/…

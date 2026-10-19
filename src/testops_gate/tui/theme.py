@@ -136,6 +136,7 @@ Shell { height: 1fr; }
 .field-name { width: 26; height: 3; content-align: left middle; color: $text-muted; }
 .field-value { height: 3; content-align: left middle; width: 1fr; }
 #retention, #srv-port { width: 12; }
+#nodes-hint { width: 100%; height: auto; margin-top: 1; }
 #srv-protocol { width: 16; margin-right: 2; }
 #srv-endpoint { width: 40; }
 #upstream, #language { width: 40; }
@@ -146,7 +147,7 @@ Shell { height: 1fr; }
 
 /* Dialogs */
 ConfirmDialog, UserForm, HostForm, ChannelForm, ListForm, ExportForm, PasswordForm, AccessDialog, HelpScreen,
-UninstallDialog, RepairDialog { align: center middle; }
+UninstallDialog, RepairDialog, NodeForm, JoinDialog { align: center middle; }
 #r-log { height: 10; border: round $border-blurred; margin-top: 1; }
 .settings-panel.danger { border: round $error 60%; }
 .settings-panel.danger:focus-within { border: round $error; }
@@ -179,6 +180,13 @@ InstallScreen { align: center top; }
 #wizard-form .row > Vertical { margin-right: 2; }
 #wizard-log { height: 1fr; min-height: 8; border: round $border-blurred; background: $surface; margin-top: 1; }
 #wizard .field-label { color: $text-muted; margin-top: 1; }
+/* Switches: Textual draws the off knob in $panel, which is black in this theme: give both states
+   a visible track, grey off and green on */
+Switch .switch--slider { color: #6e7681; background: #21262d; }
+Switch:hover > .switch--slider { color: #8b949e; }
+Switch.-on .switch--slider { color: $success; background: #23863640; }
+Switch.-on:hover > .switch--slider { color: #56d364; }
+Switch:disabled .switch--slider { color: #484f58; background: #161b22; }
 .switch-row { height: 3; margin-top: 1; }
 .switch-row Label { height: 3; content-align: left middle; width: 1fr; }
 """

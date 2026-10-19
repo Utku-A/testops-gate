@@ -1,0 +1,12 @@
+[Unit]
+Description=TestOps Gate join service (servers joining the VPN)
+Documentation=https://github.com/Utku-A/testops-gate
+After=network-online.target
+ConditionPathExists=/etc/testops-gate/config.yaml
+
+[Service]
+# Started by `testops-gate node add`; exits by itself when no join token is waiting
+Type=simple
+ExecStart=/usr/bin/testops-gate enroll-serve
+Restart=no
+UMask=0027

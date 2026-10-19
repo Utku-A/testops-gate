@@ -77,6 +77,26 @@ SCHEMA = [
     """
     ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT '';
     """,
+    # v3: servers that join the VPN, and their one-time join tokens (secret stored as a hash)
+    """
+    CREATE TABLE nodes (
+        name TEXT PRIMARY KEY,
+        vpn_ip TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at REAL NOT NULL,
+        cert_expires REAL NOT NULL DEFAULT 0,
+        password_hash TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE join_tokens (
+        id TEXT PRIMARY KEY,
+        secret_hash TEXT NOT NULL,
+        node TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        expires REAL NOT NULL,
+        used_at REAL NOT NULL DEFAULT 0
+    );
+    """,
 ]
 
 LIVE_TTL = 10.0  # seconds after which a live_clients row is considered stale
@@ -109,6 +129,39 @@ class User:
     def active(self) -> bool:
         """Allowed to connect: enabled and not temporarily blocked."""
         return self.enabled and not self.blocked
+
+
+@dataclass
+class Node:
+    """A server in the VPN. Its OpenVPN certificate CN is "<name>.node" (user names have no dots)."""
+    name: str
+    vpn_ip: str
+    enabled: bool
+    created_at: float
+    cert_expires: float = 0.0
+    password_hash: str = ""
+    note: str = ""
+
+    @property
+    def cn(self) -> str:
+        return node_cn(self.name)
+
+
+def node_cn(name: str) -> str:
+    return f"{name}.node"
+
+
+@dataclass
+class JoinToken:
+    id: str
+    secret_hash: str
+    node: str
+    created_at: float
+    expires: float
+    used_at: float = 0.0
+
+    def usable(self, now: float | None = None) -> bool:
+        return not self.used_at and (now or time.time()) < self.expires
 
 
 @dataclass
@@ -204,6 +257,50 @@ class Store:
         with self.tx() as c:
             c.execute("DELETE FROM users WHERE name = ?", (name,))
             c.execute("DELETE FROM live_clients WHERE name = ?", (name,))
+
+    # --- hosts -------------------------------------------------------------
+
+    # --- nodes -------------------------------------------------------------
+
+    def nodes(self) -> list[Node]:
+        rows = self.conn.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+        return [Node(**{**dict(r), "enabled": bool(r["enabled"])}) for r in rows]
+
+    def node(self, name: str) -> Node | None:
+        row = self.conn.execute("SELECT * FROM nodes WHERE name = ?", (name,)).fetchone()
+        return Node(**{**dict(row), "enabled": bool(row["enabled"])}) if row else None
+
+    def add_node(self, node: Node) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO nodes (name, vpn_ip, enabled, created_at, cert_expires, password_hash, note)"
+                      " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                      (node.name, node.vpn_ip, int(node.enabled), node.created_at, node.cert_expires,
+                       node.password_hash, node.note))
+
+    def delete_node(self, name: str) -> None:
+        with self.tx() as c:
+            c.execute("DELETE FROM nodes WHERE name = ?", (name,))
+            c.execute("DELETE FROM join_tokens WHERE node = ?", (name,))
+            c.execute("DELETE FROM live_clients WHERE name = ?", (node_cn(name),))
+
+    def add_token(self, token: JoinToken) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO join_tokens (id, secret_hash, node, created_at, expires, used_at)"
+                      " VALUES (?, ?, ?, ?, ?, ?)",
+                      (token.id, token.secret_hash, token.node, token.created_at, token.expires, token.used_at))
+
+    def token(self, token_id: str) -> JoinToken | None:
+        row = self.conn.execute("SELECT * FROM join_tokens WHERE id = ?", (token_id,)).fetchone()
+        return JoinToken(**dict(row)) if row else None
+
+    def tokens(self) -> list[JoinToken]:
+        return [JoinToken(**dict(r)) for r in self.conn.execute("SELECT * FROM join_tokens ORDER BY created_at")]
+
+    def use_token(self, token_id: str) -> bool:
+        """Mark a token used; False if it was already used (two joins racing for one token)."""
+        with self.tx() as c:
+            return c.execute("UPDATE join_tokens SET used_at = ? WHERE id = ? AND used_at = 0",
+                             (time.time(), token_id)).rowcount == 1
 
     # --- hosts -------------------------------------------------------------
 

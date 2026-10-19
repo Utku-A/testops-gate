@@ -40,3 +40,20 @@ DEB="/out/testops-gate_${VERSION}_all.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$DEB" >/dev/null
 chown "$OWNER" "$DEB"
 dpkg-deb --info "$DEB" | sed -n '1,20p'
+
+# testops-gate-node: what a server needs to join the VPN (standard library only, no vendored packages)
+NODE=/tmp/stage-node
+rm -rf "$NODE"
+mkdir -p "$NODE/DEBIAN" "$NODE/usr/bin" "$NODE/usr/lib/testops-gate-node" "$NODE/usr/share/doc/testops-gate-node"
+install -m 0755 /src/packaging/node/testops-gate-node "$NODE/usr/bin/"
+install -m 0755 /src/packaging/node/dns-up "$NODE/usr/lib/testops-gate-node/"
+{ cat /src/NOTICE; echo; echo "----"; echo; cat /src/LICENSE; } > "$NODE/usr/share/doc/testops-gate-node/copyright"
+for script in prerm postrm; do
+    install -m 0755 "/src/packaging/debian-node/$script" "$NODE/DEBIAN/"
+done
+SIZE=$(du -sk "$NODE" | cut -f1)
+sed -e "s/@VERSION@/$VERSION/" -e "s/@SIZE@/$SIZE/" -e "s|@MAINTAINER@|$MAINTAINER|" \
+    /src/packaging/debian-node/control > "$NODE/DEBIAN/control"
+NODE_DEB="/out/testops-gate-node_${VERSION}_all.deb"
+dpkg-deb --build --root-owner-group "$NODE" "$NODE_DEB" >/dev/null
+chown "$OWNER" "$NODE_DEB"

@@ -98,7 +98,7 @@ class Context:
 
     def allocate_ip(self) -> str:
         net = openvpn.network(self.cfg)
-        used = {u.vpn_ip for u in self.store.users()}
+        used = {u.vpn_ip for u in self.store.users()} | {n.vpn_ip for n in self.store.nodes()}
         for index, address in enumerate(net.hosts()):
             if index + 1 >= FIRST_CLIENT_OFFSET and str(address) not in used:
                 return str(address)
@@ -112,7 +112,8 @@ class Context:
             raise ValidationError(T("Enter a valid IPv4 address")) from None
         if address not in net or address in (net.network_address, net.broadcast_address, next(net.hosts())):
             raise ValidationError(T("The address must be a client address inside {net}", net=net))
-        other = next((u for u in self.store.users() if u.vpn_ip == vpn_ip and u.name != name), None)
+        other = next((u for u in self.store.users() if u.vpn_ip == vpn_ip and u.name != name), None) or \
+            next((n for n in self.store.nodes() if n.vpn_ip == vpn_ip), None)
         if other:
             raise ValidationError(T("{ip} is already used by {name}", ip=vpn_ip, name=other.name))
 

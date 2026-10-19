@@ -8,7 +8,7 @@ from __future__ import annotations
 import ipaddress
 
 from testops_gate.config import PUBLIC_RESOLVERS, Config
-from testops_gate.db import Host, User
+from testops_gate.db import Host, Node, User
 from testops_gate.render import HEADER, MGMT_SOCKET, STATUS_FILE, TUN_DEVICE
 
 DATA_CIPHERS = "AES-128-GCM:AES-256-GCM:CHACHA20-POLY1305"
@@ -159,10 +159,20 @@ def _server_auth(cfg: Config) -> list[str]:
     ]
 
 
-def passwords_file(users: list[User]) -> str:
-    """name:hash per user. Disabled users stay listed: their ccd `disable` rejects them, and the
-    log then says why instead of reporting a wrong password."""
-    return "".join(f"{u.name}:{u.password_hash}\n" for u in users if u.password_hash)
+def passwords_file(users: list[User], nodes: list[Node] = ()) -> str:
+    """name:hash per user and node (by CN). Disabled ones stay listed: their ccd `disable` rejects
+    them, and the log then says why instead of reporting a wrong password."""
+    lines = [f"{u.name}:{u.password_hash}\n" for u in users if u.password_hash]
+    lines += [f"{n.cn}:{n.password_hash}\n" for n in nodes if n.password_hash]
+    return "".join(lines)
+
+
+def node_ccd(cfg: Config, node: Node) -> str:
+    """A server: fixed address and nothing pushed (its own traffic stays off the VPN)."""
+    lines = [f"# testops-gate node: {node.name}", f"ifconfig-push {node.vpn_ip} {network(cfg).netmask}"]
+    if not node.enabled:
+        lines.append("disable")
+    return HEADER + "\n".join(lines) + "\n"
 
 
 def client_profile(cfg: Config, ca: str, cert: str, key: str, tls_crypt: str) -> str:

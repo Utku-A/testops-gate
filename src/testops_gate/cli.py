@@ -183,10 +183,14 @@ def cmd_status(args: argparse.Namespace) -> int:
           f"{T('tunnel')}: {cfg.tunnel.mode} · {T('security')}: {T('on') if cfg.security.enabled else T('off')}")
     print()
     print(table([T("Service"), T("State")], [[u, T("active") if ok else T("inactive")] for u, ok in states.items()]))
-    live = ctx.store.live_clients()
+    live = {name: c for name, c in ctx.store.live_clients().items() if not name.endswith(".node")}
     users = ctx.store.users()
     print()
     print(T("{online} of {total} users connected", online=len(live), total=len(users)))
+    joined = ctx.store.nodes()
+    if joined:
+        online = sum(1 for n in joined if n.cn in ctx.store.live_clients())
+        print(T("{online} of {total} servers connected", online=online, total=len(joined)))
     if live:
         print(table([T("User"), "VPN IP", T("Real IP"), T("Since"), "↓", "↑"],
                     [[c.name, c.vpn_ip, c.real_ip, fmt_ts(c.connected_since), fmt_bytes(c.rx), fmt_bytes(c.tx)]
@@ -348,6 +352,48 @@ def cmd_user(args: argparse.Namespace) -> int:
         else:
             sys.stdout.write(ctx.profile(args.name))
     return 0
+
+
+# --- servers (nodes) ----------------------------------------------------------------
+
+
+def print_join(ctx, token, token_string) -> None:
+    from testops_gate.core import nodes
+
+    until = datetime.fromtimestamp(token.expires).strftime("%Y-%m-%d %H:%M")
+    print(T("Run this on {name} to join it to the VPN (once, until {until}):", name=token.node, until=until))
+    print()
+    print(f"  {nodes.join_command(ctx, token, token_string)}")
+    print()
+    print(T("Open {port}/tcp to this server in the cloud provider's firewall while joining: the joining server "
+            "connects there once. The join service stops by itself afterwards.", port=ctx.cfg.nodes.enroll_port))
+
+
+def cmd_node(args: argparse.Namespace) -> int:
+    from testops_gate.core import nodes
+
+    ctx = open_context()
+    if args.node_action == "add":
+        token, token_string = nodes.create_join_token(ctx, args.name, args.minutes)
+        print_join(ctx, token, token_string)
+    elif args.node_action == "list":
+        states = {"online": T("online"), "offline": T("offline"), "waiting": T("waiting to join")}
+        print(table([T("Server"), "VPN IP", T("DNS name"), T("Status"), T("Real IP")],
+                    [[r["name"], r["vpn_ip"] or "—", r["fqdn"], states[r["state"]], r["real_ip"] or "—"]
+                     for r in nodes.node_rows(ctx)]))
+    elif args.node_action == "remove":
+        if not confirm(T("Remove {name}? Its certificate is revoked and it disconnects.", name=args.name), args.yes):
+            return 1
+        nodes.remove_node(ctx, args.name)
+        print(T("{name} removed · certificate revoked", name=args.name))
+    return 0
+
+
+def cmd_enroll_serve(args: argparse.Namespace) -> int:
+    from testops_gate import enroll
+
+    require_root()
+    return enroll.serve()
 
 
 # --- hosts ----------------------------------------------------------------------
@@ -689,6 +735,17 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("name")
     a.add_argument("-o", "--output", help="file or directory")
 
+    p = sub.add_parser("node", help="servers in the VPN: join with a one-time command")
+    ns = p.add_subparsers(dest="node_action", required=True)
+    a = ns.add_parser("add", help="create a one-time join command for a server")
+    a.add_argument("name", help="e.g. web-01 (reachable as web-01.internal)")
+    a.add_argument("--minutes", type=int, help="how long the join command works (default 60)")
+    ns.add_parser("list")
+    a = ns.add_parser("remove", help="remove a server (or cancel its join command)")
+    a.add_argument("name")
+    a.add_argument("-y", "--yes", action="store_true")
+    sub.add_parser("enroll-serve")  # run by testops-gate-enroll.service
+
     p = sub.add_parser("host", help="manage internal DNS host records")
     hs = p.add_subparsers(dest="host_action", required=True)
     hs.add_parser("list")
@@ -776,7 +833,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
-    "install": cmd_install, "uninstall": cmd_uninstall, "status": cmd_status, "doctor": cmd_doctor, "repair": cmd_repair, "apply": cmd_apply, "update": cmd_update, "user": cmd_user,
+    "install": cmd_install, "uninstall": cmd_uninstall, "status": cmd_status, "doctor": cmd_doctor, "repair": cmd_repair, "apply": cmd_apply, "update": cmd_update, "user": cmd_user, "node": cmd_node, "enroll-serve": cmd_enroll_serve,
     "host": cmd_host, "tunnel": cmd_tunnel, "settings": cmd_settings, "security": cmd_security,
     "alerts": cmd_alerts, "notify": cmd_notify, "logs": cmd_logs,
 }
