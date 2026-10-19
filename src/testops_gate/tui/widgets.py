@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
@@ -188,7 +187,7 @@ class FormScreen(ModalScreen[Any]):
         self.busy = True
         self.show_error("")
         try:
-            result = await asyncio.to_thread(self.submit, data)
+            result = await self.app.run_in_thread(self.submit, data)
         except (ValidationError, RuntimeError, OSError) as exc:  # RuntimeError includes CommandError
             self.show_error(str(exc))
             return

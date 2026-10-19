@@ -28,6 +28,17 @@
 - **Alerts** — Slack and email, with severity thresholds and muting.
 - **Dashboard** — keyboard-driven terminal UI in English and Turkish; everything is also available from the CLI.
 
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/users.png" alt="Users: status, VPN address, tunnel mode, traffic and last alert per user"><br><sub>Users</sub></td>
+    <td width="50%"><img src="docs/assets/screenshots/hosts.png" alt="Hosts: internal DNS records"><br><sub>Hosts — internal DNS</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/security.png" alt="Security: detection categories and recent alerts"><br><sub>Security monitoring</sub></td>
+    <td width="50%"><img src="docs/assets/screenshots/logs.png" alt="Logs: one user's sessions, DNS queries and connections"><br><sub>Per-user logs</sub></td>
+  </tr>
+</table>
+
 ## Install
 
 On a fresh Debian 12/13 or Ubuntu 22.04/24.04 server:

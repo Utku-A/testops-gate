@@ -26,16 +26,7 @@ OpenVPN tabanlı özel ağ: tek komutla kurulur, terminal arayüzünden (TUI) ve
 
 Desteklenen sistemler: **Debian 12/13, Ubuntu 22.04/24.04**.
 
-```
-┌─ ◆ testops-gate  vpn.example.com · udp/1194 ─────────────────────────── SPLIT  2026-10-18 10:41 ─┐
-│ 1 Dashboard    │ BAĞLI KULLANICI   BUGÜNKÜ TRAFİK    GÜVENLİK UYARISI   TÜNEL MODU             │
-│ 2 Kullanıcılar │       4               1.52 GB              2             SPLIT                │
-│ 3 Hostlar      │ ┌ Bağlı kullanıcılar ───────────────────┐ ┌ Servisler ───────────────────┐  │
-│ 4 Güvenlik     │ │ ayse    10.8.0.10  09:12  1.2 GB  …   │ │ ● openvpn   3 connections …  │  │
-│ 5 Loglar       │ │ mehmet  10.8.0.11  10:03  320 MB  …   │ │ ● unbound   4 host records … │  │
-│ 6 Ayarlar      │ └───────────────────────────────────────┘ └──────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<p align="center"><img src="assets/screenshots/tr/dashboard.png" width="900" alt="Dashboard: bağlı kullanıcılar, bugünkü trafik, güvenlik uyarıları, servisler ve canlı trafik"></p>
 
 ---
 
@@ -170,6 +161,8 @@ flowchart TB
 - Ek ağlar (split): `testops-gate tunnel routes 10.0.0.0/16`
 - Değişiklik kullanıcı yeniden bağlandığında uygulanır.
 
+<p align="center"><img src="assets/screenshots/tr/settings.png" width="900" alt="Ayarlar: arayüz dili, tünel modu, log saklama süresi ve DNS"></p>
+
 ## Host tanımlama (iç DNS)
 
 ```bash
@@ -181,6 +174,8 @@ testops-gate host add db.stage.internal pg.internal --type CNAME
 VPN kullanıcıları `stage.internal` adresine gittiğinde Unbound `10.0.5.20` döner; split modda bu IP'ye rota otomatik olarak gönderilir. Kayıt değişiklikleri Unbound yeniden yüklenince anında geçerli olur.
 
 > `stage.com` gibi gerçek bir alan adı da tanımlanabilir, ancak iç kullanım için `.internal` (bu amaçla ayrılmış) veya şirket alan adınızın bir alt alanı önerilir.
+
+<p align="center"><img src="assets/screenshots/tr/hosts.png" width="900" alt="Hostlar: iç DNS kayıtları, wildcard dahil"></p>
 
 ### VPN DNS'ini zorlama
 
@@ -223,6 +218,8 @@ testops-gate logs security --day 2026-10-17
 testops-gate logs audit
 ```
 
+<p align="center"><img src="assets/screenshots/tr/logs.png" width="900" alt="Loglar: bir kullanıcının günlük oturum, DNS ve bağlantı kayıtları"></p>
+
 ## Güvenlik izleme
 
 | Kategori (`testops-gate security …`) | Uyarı | Algılayan | Önem |
@@ -245,6 +242,8 @@ testops-gate security forbidden-ports 25 6881-6889
 testops-gate security rpz-url https://urlhaus.abuse.ch/downloads/rpz/
 testops-gate alerts --since 24h
 ```
+
+<p align="center"><img src="assets/screenshots/tr/security.png" width="900" alt="Güvenlik: aç/kapat anahtarlı kategoriler ve son uyarılar"></p>
 
 ## Bildirimler
 
@@ -273,6 +272,8 @@ testops-gate logs     USER|security|audit [--since 2h] [--day D] [--kind dns] [-
 ```
 
 ## TUI kısayolları
+
+<p align="center"><img src="assets/screenshots/tr/users.png" width="900" alt="Kullanıcılar: durum, VPN IP, tünel, günlük trafik ve son uyarı; altta kısayol çubuğu"></p>
 
 | Tuş | İşlem |
 |---|---|

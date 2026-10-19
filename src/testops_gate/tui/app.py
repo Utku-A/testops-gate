@@ -116,6 +116,7 @@ class GateApp(App):
         self._ticks = 0
         self._rebuilding = False
         self._config_mtime = 0.0
+        self._ops = 0  # management operations running in threads
         self._last_bytes: tuple[float, int] | None = None
         self.update_state = None
         self.apply_language(ctx.cfg.language if ctx else current_language())
@@ -251,7 +252,9 @@ class GateApp(App):
             return
         self._ticks += 1
         mtime = self.config_mtime()
-        if mtime != self._config_mtime:  # changed by the CLI or another dashboard
+        # Changed by the CLI or another dashboard. Not while an operation runs: it is changing
+        # ctx.cfg, and replacing the object under it would lose that change.
+        if mtime != self._config_mtime and not self._ops:
             self._config_mtime = mtime
             self.ctx.cfg = config_mod.load()
         if self._ticks % SERVICES_EVERY == 0:
@@ -276,12 +279,20 @@ class GateApp(App):
         Returns the operation's result, True if it returned None, or None if it failed.
         """
         try:
-            result = await asyncio.to_thread(fn, *args, **kwargs)
+            result = await self.run_in_thread(fn, *args, **kwargs)
         except (ValidationError, RuntimeError, OSError) as exc:  # RuntimeError includes CommandError
             self.notify(str(exc), title=T("✗ Failed"), severity="error", timeout=8)
             return None
-        self._config_mtime = self.config_mtime()
         return True if result is None else result
+
+    async def run_in_thread(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Run a management operation in a thread; its own config writes are not taken for outside edits."""
+        self._ops += 1
+        try:
+            return await asyncio.to_thread(fn, *args, **kwargs)
+        finally:
+            self._ops -= 1
+            self._config_mtime = self.config_mtime()
 
     def tunnel_changed(self) -> None:
         mode = self.ctx.cfg.tunnel.mode
