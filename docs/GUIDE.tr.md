@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://testopscenter.com">TestOps Center</a> ·
   <a href="../LICENSE">AGPL-3.0</a> ·
-  Debian 12/13 · Ubuntu 22.04/24.04
+  Debian 12+ · Ubuntu 22.04+ · amd64 / arm64
 </p>
 
 OpenVPN tabanlı özel ağ: tek komutla kurulur, terminal arayüzünden (TUI) veya komut satırından yönetilir.
@@ -24,7 +24,9 @@ OpenVPN tabanlı özel ağ: tek komutla kurulur, terminal arayüzünden (TUI) ve
 - **Bildirimler:** Slack ve e-posta; kanal bazında minimum önem ve susturma süresi
 - **Arayüz dili:** İngilizce (varsayılan) ve Türkçe
 
-Desteklenen sistemler: **Debian 12/13, Ubuntu 22.04/24.04**.
+Desteklenen sistemler: **Debian 12 ve üstü, Ubuntu 22.04 ve üstü** (LTS ve ara sürümler) ile bunlardan türeyen dağıtımlar
+(Raspberry Pi OS, Linux Mint, Pop!_OS…). Paket mimariden bağımsızdır: amd64, arm64, armhf ve diğerleri.
+Debian 12/13 ve Ubuntu 22.04/24.04/25.10/26.04 her sürümde test edilir; diğerlerinde kurulum "test edilmedi" notu gösterir.
 
 <p align="center"><img src="assets/screenshots/tr/dashboard.png" width="900" alt="Dashboard: bağlı kullanıcılar, bugünkü trafik, güvenlik uyarıları, servisler ve canlı trafik"></p>
 
@@ -47,10 +49,12 @@ curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- \
 
 | Ortam değişkeni | Açıklama |
 |---|---|
-| `TESTOPS_GATE_VERSION` | Belirli bir sürüm, ör. `0.1.0` (varsayılan: son sürüm) |
-| `TESTOPS_GATE_BASE_URL` | Başka bir aynadan indir (`testops-gate_all.deb` + `SHA256SUMS` barındıran bir adres) |
+| `TESTOPS_GATE_VERSION` | Belirli bir sürüm, ör. `0.1.1` (varsayılan: son sürüm) |
+| `TESTOPS_GATE_RELEASES` | Sürüm deposunun kökü (altında `latest/` ve `v<sürüm>/` olan bir ayna) |
+| `TESTOPS_GATE_BASE_URL` | Doğrudan bir dizinden indir (`testops-gate_all.deb` + `SHA256SUMS` barındıran bir adres) |
+| `NO_COLOR` | Renksiz çıktı |
 
-Paketi elle kurmak da mümkün: `sudo apt install ./testops-gate_0.1.0_all.deb && sudo testops-gate`.
+Paketi elle kurmak da mümkün: `sudo apt install ./testops-gate_0.1.1_all.deb && sudo testops-gate`.
 
 | Seçenek | Varsayılan | Açıklama |
 |---|---|---|

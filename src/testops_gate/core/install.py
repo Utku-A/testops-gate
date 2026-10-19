@@ -55,7 +55,8 @@ def preflight() -> list[str]:
         problems.append(T("The TUN device (/dev/net/tun) is not available"))
     info = netinfo.os_info()
     if not info.supported:
-        problems.append(T("Unsupported system: {os}. Supported: Debian 12/13, Ubuntu 22.04/24.04", os=info.pretty))
+        problems.append(T("Unsupported system: {os}. Supported: Debian 12 or later, Ubuntu 22.04 or later and their derivatives",
+                           os=info.pretty))
     return problems
 
 

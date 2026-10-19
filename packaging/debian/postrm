@@ -5,7 +5,7 @@ if [ "$1" = "purge" ]; then
     # Certificates, users, state and logs
     rm -rf /etc/testops-gate /var/lib/testops-gate /var/log/testops-gate
     if getent group testops-gate >/dev/null; then
-        delgroup --system --quiet testops-gate || true
+        groupdel testops-gate 2>/dev/null || true
     fi
 fi
 if [ -d /run/systemd/system ]; then

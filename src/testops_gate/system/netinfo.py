@@ -14,8 +14,16 @@ from dataclasses import dataclass
 from testops_gate.paths import P
 from testops_gate.system.runner import run
 
-SUPPORTED_OS = {"debian": {"12", "13"}, "ubuntu": {"22.04", "24.04"}}
+# Debian 12 and Ubuntu 22.04 or later (Python 3.10, OpenVPN 2.5), and their derivatives;
+# the package dependencies decide on a derivative
+MIN_VERSION = {"debian": (12,), "ubuntu": (22, 4)}
+TESTED_OS = {"debian": {"12", "13"}, "ubuntu": {"22.04", "24.04", "25.10", "26.04"}}
 PUBLIC_IP_SERVICES = ["https://api.ipify.org", "https://ifconfig.me/ip", "https://api.seeip.org"]
+
+
+def _version_tuple(version: str) -> tuple[int, ...] | None:
+    parts = version.split(".")
+    return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else None
 
 
 @dataclass
@@ -23,10 +31,18 @@ class OsInfo:
     id: str
     version: str
     pretty: str
+    like: tuple[str, ...] = ()
 
     @property
     def supported(self) -> bool:
-        return self.version in SUPPORTED_OS.get(self.id, set())
+        if self.id in MIN_VERSION:
+            version = _version_tuple(self.version)
+            return version is None or version >= MIN_VERSION[self.id]  # testing/sid have no VERSION_ID
+        return any(base in MIN_VERSION for base in self.like)
+
+    @property
+    def tested(self) -> bool:
+        return self.version in TESTED_OS.get(self.id, set())
 
 
 def os_info() -> OsInfo:
@@ -36,7 +52,8 @@ def os_info() -> OsInfo:
             if "=" in line:
                 key, _, value = line.partition("=")
                 data[key] = value.strip().strip('"')
-    return OsInfo(data.get("ID", ""), data.get("VERSION_ID", ""), data.get("PRETTY_NAME", "unknown"))
+    return OsInfo(data.get("ID", ""), data.get("VERSION_ID", ""), data.get("PRETTY_NAME", "unknown"),
+                  tuple(data.get("ID_LIKE", "").split()))
 
 
 def is_root() -> bool:

@@ -2,7 +2,8 @@
 set -e
 
 if [ "$1" = "configure" ]; then
-    getent group testops-gate >/dev/null || addgroup --system --quiet testops-gate
+    # groupadd (package passwd) is always installed; addgroup (adduser) may not be
+    getent group testops-gate >/dev/null || groupadd --system testops-gate
     install -d -m 0750 -o root -g testops-gate /etc/testops-gate /var/lib/testops-gate /var/log/testops-gate
     python3 -m compileall -q /usr/lib/testops-gate >/dev/null 2>&1 || true
     if [ -d /run/systemd/system ]; then

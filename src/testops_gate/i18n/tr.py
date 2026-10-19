@@ -387,8 +387,8 @@ TR: dict[str, str] = {
     " · less than 2 GB RAM": " · 2 GB'tan az RAM",
     "Install  ^S": "Kur  ^S",
     "The TUN device (/dev/net/tun) is not available": "TUN aygıtı (/dev/net/tun) kullanılamıyor",
-    "Unsupported system: {os}. Supported: Debian 12/13, Ubuntu 22.04/24.04":
-        "Desteklenmeyen sistem: {os}. Desteklenenler: Debian 12/13, Ubuntu 22.04/24.04",
+    "Unsupported system: {os}. Supported: Debian 12 or later, Ubuntu 22.04 or later and their derivatives":
+        "Desteklenmeyen sistem: {os}. Desteklenenler: Debian 12 ve üstü, Ubuntu 22.04 ve üstü ile bunlardan türeyen dağıtımlar",
     "Enter the public address or hostname clients connect to": "İstemcilerin bağlanacağı dış adresi veya alan adını girin",
     "Protocol must be udp or tcp": "Protokol udp veya tcp olmalı",
     "Installing packages: {packages}": "Paketler kuruluyor: {packages}",

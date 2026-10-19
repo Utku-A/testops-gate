@@ -11,7 +11,7 @@
 
 <p align="center">
   A private OpenVPN network for your team, managed from a terminal dashboard.<br>
-  <a href="https://testopscenter.com">TestOps Center</a> · <a href="LICENSE">AGPL-3.0</a> · Debian 12/13 · Ubuntu 22.04/24.04
+  <a href="https://testopscenter.com">TestOps Center</a> · <a href="LICENSE">AGPL-3.0</a> · Debian 12+ · Ubuntu 22.04+ · amd64 / arm64
 </p>
 
 <p align="center">
@@ -41,7 +41,8 @@
 
 ## Install
 
-On a fresh Debian 12/13 or Ubuntu 22.04/24.04 server:
+On a fresh Debian 12 or later, or Ubuntu 22.04 or later server (amd64, arm64 or any other architecture;
+derivatives such as Raspberry Pi OS work too):
 
 ```bash
 curl -fsSL https://testopscenter.com/install.sh | sudo sh

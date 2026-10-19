@@ -20,7 +20,7 @@ https://testopscenter.com/testops-gate/v0.2.0/   the same files for every versio
 2. Add a `## 0.2.0 — YYYY-MM-DD` section to `CHANGELOG.md`; it becomes the release notes.
 3. Commit, then `git tag v0.2.0 && git push && git push --tags`.
 4. Run the release job with `REF=v0.2.0`: lint + unit tests → `.deb` → end-to-end tests on
-   Debian 12/13 and Ubuntu 22.04/24.04 → release files → upload to testopscenter.com →
+   Debian 12/13 and Ubuntu 22.04/24.04/26.04 → release files → upload to testopscenter.com →
    (optional) GitHub release. Nothing is published when a test fails.
 
 ## Release scripts
