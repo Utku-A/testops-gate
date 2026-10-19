@@ -3,6 +3,19 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.4.0 — 2026-10-19
+
+- Change the port, protocol and public address after installation: Settings → Server in the
+  dashboard, or `testops-gate settings port N [--protocol udp|tcp]` and `testops-gate settings
+  endpoint HOST`. The new port is checked first (another program using it is named), the firewall
+  opens it, OpenVPN restarts and every profile is renewed
+- Email users their profile: the `.ovpn` file as an attachment with setup steps (which app,
+  how to import, how to sign in), never the password. New users get it by default when they have an
+  email address; `m` on the Users page or `testops-gate user send NAME|--all` sends it again, and
+  after a port, address or sign-in change the dashboard offers to email everyone their new
+  profile. Uses the SMTP server of an email notification channel; with certificate-only sign-in
+  it warns first, and the email tells the user to delete it after importing
+
 ## 0.3.0 — 2026-10-19
 
 - `testops-gate doctor` finds out why services are not running: the error lines from the

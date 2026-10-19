@@ -98,7 +98,17 @@ sudo testops-gate repair     # eksik paketleri kurar, artakalan tg0 arayüzünü
 
 Onarım kullanıcıları, sertifikaları ve ayarları korur. Onaramadığı bir sorun kalırsa söyler; örneğin VPN portunu başka bir
 program kullanıyorsa (`Port 6000/tcp şu program tarafından kullanılıyor: Xorg (pid 812)`) o programı durdurun ya da
-başka bir portla kurun. Kurulum da başlamadan portun boş olup olmadığını kontrol eder.
+VPN'i başka bir porta taşıyın. Kurulum da başlamadan portun boş olup olmadığını kontrol eder.
+
+**Port, protokol veya adres değiştirmek:** Ayarlar → Sunucu, ya da
+
+```bash
+sudo testops-gate settings port 443 --protocol tcp   # yeni port önce kontrol edilir; doluysa kullanan program söylenir
+sudo testops-gate settings endpoint vpn.example.com   # sunucunun IP'si değiştiğinde
+```
+
+Güvenlik duvarı yeni portu açar, OpenVPN yeniden başlar ve bütün profiller yenilenir: kullanıcılara yeni
+profillerini gönderin, bulut sağlayıcının güvenlik duvarında yeni porta izin verin.
 
 ## Kaldırma
 
@@ -197,7 +207,19 @@ sudo testops-gate user export ayse -o ~/            # ~/ayse.ovpn, sahibi siz ol
 scp siz@vpn.example.com:ayse.ovpn .                 # bilgisayarınızda
 ```
 
-Dashboard'da Kullanıcılar → `o` aynı işi yapar. Profili OpenVPN Connect, `openvpn` veya Tunnelblick gibi bir
+Dashboard'da Kullanıcılar → `o` aynı işi yapar.
+
+**E-postayla göndermek:** Bir e-posta bildirim kanalı tanımlıysa profil, kurulum adımlarıyla birlikte kullanıcının
+e-postasına gönderilebilir (parola asla e-postaya eklenmez). Yeni kullanıcı eklerken varsayılan olarak gönderilir.
+
+```bash
+sudo testops-gate user send ayse        # tekrar gönder (dashboard: Kullanıcılar → m)
+sudo testops-gate user send --all       # herkese (ör. port değiştikten sonra)
+sudo testops-gate user add ayse --email ayse@example.com --no-send
+```
+
+Yalnızca sertifika modunda profil tek başına bağlanmaya yettiği için gönderimden önce uyarı gösterilir; e-posta da
+kullanıcıya içe aktardıktan sonra silmesini söyler. Profili OpenVPN Connect, `openvpn` veya Tunnelblick gibi bir
 istemciye aktarın.
 
 ## Tünel modu
@@ -315,7 +337,7 @@ testops-gate install | update [--check] | uninstall [--keep-data] [--keep-packag
 testops-gate user     list | add | edit | disable | enable | delete | renew | export
 testops-gate host     list | add | edit | delete
 testops-gate tunnel   show | set split|full | routes [CIDR…]
-testops-gate settings show | language en|tr | retention DAYS | dns UPSTREAM | dns-enforce on|off | update-check on|off | update-url URL|default
+testops-gate settings show | language en|tr | port N [--protocol udp|tcp] | endpoint ADRES | auth MOD | retention DAYS | dns UPSTREAM | dns-enforce on|off | update-check on|off | update-url URL|default
 testops-gate security status | enable [CAT…] | disable [CAT…] | block-networks | forbidden-ports | rpz-url
 testops-gate notify   list | add slack|email | enable | disable | delete | test
 testops-gate alerts   [--since 24h] [--user NAME]

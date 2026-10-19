@@ -71,8 +71,10 @@ Or from the command line:
 sudo testops-gate user add alice --email alice@example.com   # prints the password and the profile path
 sudo testops-gate user export alice -o ~/            # copy the .ovpn to your home, then scp it
 sudo testops-gate user passwd alice                  # new password
+sudo testops-gate user send alice                    # email the profile (+ setup steps, never the password)
 sudo testops-gate host add stage.internal 10.0.5.20
 sudo testops-gate tunnel set full                    # or: split
+sudo testops-gate settings port 443 --protocol tcp   # move the VPN; every profile is renewed
 sudo testops-gate notify add slack --name '#vpn-alerts' --webhook https://hooks.slack.com/services/…
 sudo testops-gate logs alice --since 2h
 sudo testops-gate status

@@ -54,7 +54,11 @@ def build_email(channel: Channel, alert: AlertInfo) -> EmailMessage:
 
 
 def send_email(channel: Channel, alert: AlertInfo) -> None:
-    msg = build_email(channel, alert)
+    smtp_send(channel, build_email(channel, alert))
+
+
+def smtp_send(channel: Channel, msg: EmailMessage) -> None:
+    """Send a message through an email channel's SMTP server."""
     context = ssl.create_default_context()
     try:
         if channel.smtp_security == "ssl":

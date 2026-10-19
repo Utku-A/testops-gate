@@ -75,8 +75,8 @@ def port_owners(cfg: Config) -> list[str]:
 
 
 def port_hint(cfg: Config, owners: list[str]) -> str:
-    return T("Port {port}/{proto} is used by {owners}. Stop it, or install on another port "
-             "(testops-gate uninstall --keep-data, then testops-gate install --port N).",
+    return T("Port {port}/{proto} is used by {owners}. Stop it, or move the VPN to another port: "
+             "testops-gate settings port N (Settings → Server in the dashboard).",
              port=cfg.server.port, proto=cfg.server.protocol, owners=", ".join(owners))
 
 

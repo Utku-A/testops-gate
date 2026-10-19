@@ -135,7 +135,9 @@ Shell { height: 1fr; }
 .field { height: 3; }
 .field-name { width: 26; height: 3; content-align: left middle; color: $text-muted; }
 .field-value { height: 3; content-align: left middle; width: 1fr; }
-#retention { width: 12; }
+#retention, #srv-port { width: 12; }
+#srv-protocol { width: 16; margin-right: 2; }
+#srv-endpoint { width: 40; }
 #upstream, #language { width: 40; }
 #tunnel-mode { border: none; background: transparent; margin-top: 1; }
 #channels { height: auto; max-height: 8; }
@@ -150,7 +152,7 @@ UninstallDialog, RepairDialog { align: center middle; }
 .settings-panel.danger:focus-within { border: round $error; }
 #u-log { height: 10; border: round $border-blurred; margin-top: 1; }
 .dialog {
-    width: 64; height: auto; max-height: 90%; background: $boost; padding: 1 2;
+    width: 64; height: auto; max-height: 95%; overflow-y: auto; background: $boost; padding: 1 2;
     border: round $border-blurred; border-title-color: $accent; border-title-style: bold;
 }
 .dialog.wide { width: 84; }
@@ -162,6 +164,7 @@ UninstallDialog, RepairDialog { align: center middle; }
 .dialog .field-label { color: $text-muted; margin-top: 1; }
 .dialog Input, .dialog Select { width: 100%; }
 .dialog .hint { margin-top: 1; width: 100%; }
+.dialog .hint.warning { color: $warning; }
 .dialog-message { margin-bottom: 1; }
 #f-error { color: $error; text-style: bold; margin-top: 1; height: auto; }
 .dialog-buttons { height: auto; margin-top: 1; align-horizontal: right; }

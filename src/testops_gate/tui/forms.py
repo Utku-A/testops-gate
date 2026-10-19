@@ -44,35 +44,48 @@ def _int(value: str, label: str) -> int:
 
 
 class UserForm(FormScreen):
-    def __init__(self, submit: Callable[[dict], Any], user: User | None = None, ask_password: bool = False) -> None:
+    def __init__(self, submit: Callable[[dict], Any], user: User | None = None, ask_password: bool = False,
+                 can_mail: bool = False, cert_only: bool = False) -> None:
         super().__init__(submit)
         self.user = user
         self.ask_password = ask_password and user is None
+        self.can_mail, self.cert_only = can_mail, cert_only
 
     def compose(self) -> ComposeResult:
         u = self.user
-        with Vertical(classes="dialog") as dialog:
+
+        def field(label: str, widget) -> Vertical:
+            return Vertical(Label(label, classes="field-label"), widget)
+
+        with Vertical(classes="dialog wide") as dialog:
             dialog.border_title = T("Edit user · {name}", name=u.name) if u else T("New VPN user")
-            yield Label(T("Username"), classes="field-label")
-            yield Input(u.name if u else "", placeholder=T("e.g. alice"), restrict=r"[a-zA-Z0-9_-]*",
-                        max_length=32, disabled=u is not None, id="f-name")
-            yield Label(T("Email"), classes="field-label")
-            yield Input(u.email if u else "", placeholder="alice@example.com", id="f-email")
-            yield Label(T("Tunnel mode"), classes="field-label")
-            yield FormSelect(
-                [(T("Default (global setting)"), "default"), (T("split · defined hosts only"), "split"),
-                 (T("full · all traffic"), "full")],
-                value=u.mode if u else "default", allow_blank=False, id="f-mode",
-            )
-            yield Label(T("VPN address"), classes="field-label")
-            yield Input(u.vpn_ip if u else "", placeholder=T("automatic"), id="f-ip")
+            with Horizontal(classes="row"):
+                yield field(T("Username"), Input(u.name if u else "", placeholder=T("e.g. alice"),
+                                                 restrict=r"[a-zA-Z0-9_-]*", max_length=32, disabled=u is not None,
+                                                 id="f-name"))
+                yield field(T("Email"), Input(u.email if u else "", placeholder="alice@example.com", id="f-email"))
+            with Horizontal(classes="row"):
+                yield field(T("Tunnel mode"), FormSelect(
+                    [(T("Default (global setting)"), "default"), (T("split · defined hosts only"), "split"),
+                     (T("full · all traffic"), "full")],
+                    value=u.mode if u else "default", allow_blank=False, id="f-mode"))
+                yield field(T("VPN address"), Input(u.vpn_ip if u else "", placeholder=T("automatic"), id="f-ip"))
             if u is None:
-                yield Label(T("Certificate validity"), classes="field-label")
-                yield FormSelect([(T("1 year"), "365"), (T("2 years"), "730"), (T("5 years"), "1825")],
-                                 value="365", allow_blank=False, id="f-days")
-                if self.ask_password:
-                    yield Label(T("Password"), classes="field-label")
-                    yield Input(password=True, placeholder=T("empty: generate a strong password"), id="f-password")
+                with Horizontal(classes="row"):
+                    yield field(T("Certificate validity"), FormSelect(
+                        [(T("1 year"), "365"), (T("2 years"), "730"), (T("5 years"), "1825")],
+                        value="365", allow_blank=False, id="f-days"))
+                    if self.ask_password:
+                        yield field(T("Password"), Input(password=True, placeholder=T("empty: generate a strong password"),
+                                                         id="f-password"))
+                with Horizontal(classes="switch-row"):
+                    yield Label(T("Email the profile to the user"))
+                    yield Switch(self.can_mail, disabled=not self.can_mail, id="f-send")
+                if not self.can_mail:
+                    yield Label(T("Needs an email notification channel (Settings → Notification channels)"),
+                                classes="hint")
+                elif self.cert_only:
+                    yield Label(T("Certificate only: the profile alone is enough to connect."), classes="hint warning")
             else:
                 yield Label(T("Changes apply when the user reconnects."), classes="hint")
             yield Label("", id="f-error")
@@ -91,6 +104,8 @@ class UserForm(FormScreen):
             data["days"] = int(self.query_one("#f-days", Select).value)
         if self.ask_password:
             data["password"] = self.query_one("#f-password", Input).value or None
+        if self.user is None:
+            data["send"] = self.query_one("#f-send", Switch).value
         return data
 
 
@@ -122,9 +137,9 @@ class AccessDialog(ModalScreen[None]):
 
     BINDINGS = [Binding("escape", "close", "Close")]
 
-    def __init__(self, title: str, cfg: Config, users: list[tuple[str, str]]) -> None:
+    def __init__(self, title: str, cfg: Config, users: list[tuple[str, str]], note: str = "") -> None:
         super().__init__()
-        self._title, self._cfg, self._users = title, cfg, users
+        self._title, self._cfg, self._users, self._note = title, cfg, users, note
 
     def compose(self) -> ComposeResult:
         cfg = self._cfg
@@ -146,6 +161,8 @@ class AccessDialog(ModalScreen[None]):
             if any(password for _, password in self._users):
                 yield Label(access.password_note(cfg), classes="hint")
             yield Label(access.connect_hint(cfg), classes="hint")
+            if self._note:
+                yield Label(self._note, classes="hint", id="access-note")
             with Horizontal(classes="dialog-buttons"):
                 yield Button(T("Close"), variant="primary", id="close")
 

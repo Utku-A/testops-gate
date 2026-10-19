@@ -14,11 +14,20 @@ import os
 import re
 import shutil
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from testops_gate import config as config_mod
 from testops_gate import logs
-from testops_gate.config import AUTH_MODES, SEVERITIES, TUNNEL_MODES, UPSTREAMS, Channel, Config, new_channel_id
+from testops_gate.config import (
+    AUTH_MODES,
+    PROTOCOLS,
+    SEVERITIES,
+    TUNNEL_MODES,
+    UPSTREAMS,
+    Channel,
+    Config,
+    new_channel_id,
+)
 from testops_gate.core import passwords
 from testops_gate.core.apply import apply_all, write_auth, write_ccd
 from testops_gate.db import Host, Store, User
@@ -283,6 +292,42 @@ class Context:
         logs.audit("user.export", f"{name} -> {target}")
         return target
 
+    # --- profile emails --------------------------------------------------------
+
+    def mail_channel(self) -> Channel | None:
+        """The email notification channel whose SMTP settings send profiles."""
+        return next((c for c in self.cfg.channels if c.kind == "email" and c.enabled), None)
+
+    def send_profile(self, name: str) -> str:
+        """Email a user their profile with setup steps (never the password); returns the address."""
+        from testops_gate.notify import profile_mail
+        from testops_gate.notify.send import smtp_send
+
+        user = self._user(name)
+        if not user.email:
+            raise ValidationError(T("{name} has no email address", name=name))
+        channel = self.mail_channel()
+        if channel is None:
+            raise ValidationError(T("Add an email notification channel first (Settings → Notification channels); "
+                                    "its SMTP server sends the profiles"))
+        smtp_send(channel, profile_mail.build(self.cfg, channel, user, self.profile(name)))
+        logs.audit("user.send-profile", f"{name} -> {user.email}")
+        return user.email
+
+    def send_profiles(self, names: list[str] | None = None) -> tuple[list[str], list[tuple[str, str]]]:
+        """Email profiles to the given users (default: all); returns (sent, [(skipped, reason)])."""
+        if self.mail_channel() is None:
+            raise ValidationError(T("Add an email notification channel first (Settings → Notification channels); "
+                                    "its SMTP server sends the profiles"))
+        sent, skipped = [], []
+        for user in self.store.users() if names is None else [self._user(n) for n in names]:
+            try:
+                self.send_profile(user.name)
+                sent.append(user.name)
+            except (ValidationError, RuntimeError) as exc:  # RuntimeError includes DeliveryError
+                skipped.append((user.name, str(exc)))
+        return sent, skipped
+
     def write_profile(self, name: str, key_password: str | None = None) -> None:
         pki = EasyRSA()
         key = pki.key(name).read_text()
@@ -356,6 +401,46 @@ class Context:
         logs.audit("host.delete", name)
 
     # --- settings ------------------------------------------------------------
+
+    def set_server(self, *, endpoint: str | None = None, port: int | None = None,
+                   protocol: str | None = None) -> dict[str, str]:
+        """Change the address, port or protocol clients connect to.
+
+        All three are written into every profile, so every profile is renewed (users need it
+        again); with profile passwords each one gets a new password, returned as user: password.
+        OpenVPN restarts and the firewall opens the new port.
+        """
+        from testops_gate.core import doctor
+
+        server = self.cfg.server
+        new_endpoint = server.endpoint if endpoint is None else endpoint.strip()
+        new_port = server.port if port is None else port
+        new_protocol = protocol or server.protocol
+        if not new_endpoint or any(ch.isspace() for ch in new_endpoint):
+            raise ValidationError(T("Enter the public address or hostname clients connect to"))
+        if not 1 <= new_port <= 65535:
+            raise ValidationError(T("Port must be between 1 and 65535"))
+        if new_protocol not in PROTOCOLS:
+            raise ValidationError(T("Protocol must be udp or tcp"))
+        if (new_endpoint, new_port, new_protocol) == (server.endpoint, server.port, server.protocol):
+            return {}
+        if (new_port, new_protocol) != (server.port, server.protocol):
+            probe = replace(self.cfg, server=replace(server, port=new_port, protocol=new_protocol))
+            owners = doctor.port_owners(probe)
+            if owners:
+                raise ValidationError(T("Port {port}/{proto} is used by {owners}", port=new_port,
+                                        proto=new_protocol, owners=", ".join(owners)))
+        server.endpoint, server.port, server.protocol = new_endpoint, new_port, new_protocol
+        self.save()
+        created: dict[str, str] = {}
+        for user in self.store.users():
+            password = None
+            if self.cfg.auth.mode == "profile-password":
+                password = created[user.name] = passwords.generate()
+            self.write_profile(user.name, key_password=password)
+        self.apply()
+        logs.audit("server.change", f"{new_endpoint}:{new_port}/{new_protocol}")
+        return created
 
     def set_tunnel_mode(self, mode: str) -> None:
         if mode not in TUNNEL_MODES:

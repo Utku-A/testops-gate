@@ -298,6 +298,11 @@ class GateApp(App):
             self._ops -= 1
             self._config_mtime = self.config_mtime()
 
+    def server_changed(self) -> None:
+        cfg = self.ctx.cfg
+        self.query_one("#server", Label).update(f"{cfg.server.endpoint} · {cfg.server.protocol}/{cfg.server.port}")
+        self.refresh_snapshot()
+
     def tunnel_changed(self) -> None:
         mode = self.ctx.cfg.tunnel.mode
         badge = self.query_one("#mode-badge", Label)

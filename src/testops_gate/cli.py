@@ -263,6 +263,26 @@ def read_password(args: argparse.Namespace) -> str | None:
     return sys.stdin.readline().rstrip("\r\n")
 
 
+CERT_ONLY_WARNING = ("Sign-in is certificate only: the profile alone is enough to connect, so anyone who reads "
+                     "the email can connect.")
+
+
+def send_profile_after_add(ctx, user) -> None:
+    """New users get their profile by email unless --no-send; says why when it cannot."""
+    if not user.email:
+        print(T("Profile not emailed: {name} has no email address", name=user.name))
+        return
+    if ctx.mail_channel() is None:
+        print(T("Profile not emailed: no email notification channel is set up"))
+        return
+    if ctx.cfg.auth.mode == "certificate":
+        print(T(CERT_ONLY_WARNING))
+    try:
+        print(T("Profile emailed to {email}", email=ctx.send_profile(user.name)))
+    except RuntimeError as exc:
+        print(T("Profile not emailed: {error}", error=exc))
+
+
 def cmd_user(args: argparse.Namespace) -> int:
     ctx = open_context()
     action = args.user_action
@@ -281,6 +301,20 @@ def cmd_user(args: argparse.Namespace) -> int:
         print(T("User {name} created: {path}", name=user.name, path=P.profiles_dir / f"{user.name}.ovpn"))
         print(T("VPN address: {ip}", ip=user.vpn_ip))
         print_access(ctx, user.name, user.password)
+        if not args.no_send:
+            print()
+            send_profile_after_add(ctx, user)
+    elif action == "send":
+        if not args.names and not args.all:
+            raise CliError(T("Name users, or use --all"))
+        if ctx.cfg.auth.mode == "certificate" and not confirm(T(CERT_ONLY_WARNING) + " " + T("Send anyway?"), args.yes):
+            return 1
+        sent, skipped = ctx.send_profiles(None if args.all else args.names)
+        for name in sent:
+            print(f"✓ {name}")
+        for name, reason in skipped:
+            print(f"✗ {name}: {reason}")
+        return 0 if not skipped else 1
     elif action == "passwd":
         password = ctx.set_password(args.name, read_password(args))
         if ctx.cfg.auth.mode == "profile-password":
@@ -378,9 +412,25 @@ def cmd_settings(args: argparse.Namespace) -> int:
         ctx.set_update_check(args.value == "on")
     elif args.settings_action == "update-url":
         ctx.set_update_url("" if args.value == "default" else args.value)
+    elif args.settings_action in ("port", "endpoint"):
+        if args.settings_action == "port":
+            created = ctx.set_server(port=args.value, protocol=args.protocol)
+        else:
+            created = ctx.set_server(endpoint=args.value)
+        server = ctx.cfg.server
+        print(T("Clients connect to {endpoint}:{port}/{proto}. Every profile was renewed: send users their profile "
+                "again.", endpoint=server.endpoint, port=server.port, proto=server.protocol))
+        print(T("Allow {port}/{proto} in the cloud provider's firewall.", port=server.port, proto=server.protocol))
+        print(T("Email everyone their new profile: testops-gate user send --all"))
+        if created:
+            from testops_gate.core import access
+
+            print(table([T("User"), access.password_label(ctx.cfg)], [[n, p] for n, p in created.items()]))
+            print(access.password_note(ctx.cfg))
     elif args.settings_action == "auth":
         created = ctx.set_auth_mode(args.value)
         print(T("Sign-in mode: {mode}. Every profile was renewed: send users their profile again.", mode=args.value))
+        print(T("Email everyone their new profile: testops-gate user send --all"))
         if created:
             from testops_gate.core import access
 
@@ -608,6 +658,11 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--days", type=int, default=365, help="certificate validity")
     a.add_argument("--ip", help="fixed VPN address (default: next free)")
     a.add_argument("--password-stdin", action="store_true", help="read the password from stdin (default: generate)")
+    a.add_argument("--no-send", action="store_true", help="do not email the profile to the user")
+    a = us.add_parser("send", help="email users their profile (attachment + setup steps, never the password)")
+    a.add_argument("names", nargs="*")
+    a.add_argument("--all", action="store_true", help="every user with an email address")
+    a.add_argument("-y", "--yes", action="store_true")
     a = us.add_parser("passwd", help="set a new password (generated unless --password-stdin)")
     a.add_argument("name")
     a.add_argument("--password-stdin", action="store_true")
@@ -662,6 +717,10 @@ def build_parser() -> argparse.ArgumentParser:
         "value", choices=["on", "off"])
     ss.add_parser("update-check", help="check for new releases daily").add_argument("value", choices=["on", "off"])
     ss.add_parser("update-url", help="release mirror URL, or `default`").add_argument("value")
+    a = ss.add_parser("port", help="port (and protocol) clients connect to; renews every profile")
+    a.add_argument("value", type=int)
+    a.add_argument("--protocol", choices=["udp", "tcp"])
+    ss.add_parser("endpoint", help="public address clients connect to; renews every profile").add_argument("value")
     ss.add_parser("auth", help="how users sign in: user-password, profile-password or certificate").add_argument(
         "value", choices=AUTH_MODES)
 

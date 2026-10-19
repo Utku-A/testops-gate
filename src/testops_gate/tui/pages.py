@@ -35,6 +35,7 @@ from textual.widgets.option_list import Option
 
 from testops_gate import __version__, logs
 from testops_gate.config import SECURITY_CATEGORIES, UPSTREAMS
+from testops_gate.core.context import ValidationError
 from testops_gate.i18n import LANGUAGES, T
 from testops_gate.render.openvpn import effective_mode, server_ip
 from testops_gate.system import dnsquery, services
@@ -242,6 +243,7 @@ class UsersPage(Page):
         Binding("o", "export", "Profile"),
         Binding("r", "renew", "Renew"),
         Binding("p", "password", "Password"),
+        Binding("m", "mail", "Email profile"),
         Binding("slash", "search", "Search"),
         Binding("down", "focus_table", show=False),
     ]
@@ -320,16 +322,53 @@ class UsersPage(Page):
         ctx = self.tg.ctx
 
         def submit(data: dict):
-            return ctx.add_user(data["name"], data["email"], data["mode"], data["days"], data["vpn_ip"],
+            user = ctx.add_user(data["name"], data["email"], data["mode"], data["days"], data["vpn_ip"],
                                 data.get("password"))
+            note = ""
+            if data.get("send"):
+                if not user.email:
+                    note = T("Profile not emailed: {name} has no email address", name=user.name)
+                else:
+                    try:
+                        note = T("✓ Profile emailed to {email}", email=ctx.send_profile(user.name))
+                    except (ValidationError, RuntimeError) as exc:
+                        note = T("Profile not emailed: {error}", error=exc)
+            return {"user": user, "note": note}
 
-        def done(user) -> None:
-            if user:
+        def done(result) -> None:
+            if result:
+                user = result["user"]
                 self.tg.refresh_snapshot()
                 self.app.push_screen(AccessDialog(T("✓ {name} added · {ip}", name=user.name, ip=user.vpn_ip),
-                                                  ctx.cfg, [(user.name, user.password)]))
+                                                  ctx.cfg, [(user.name, user.password)], note=result["note"]))
 
-        self.app.push_screen(UserForm(submit, ask_password=ctx.uses_passwords), done)
+        self.app.push_screen(UserForm(submit, ask_password=ctx.uses_passwords, can_mail=ctx.mail_channel() is not None,
+                                      cert_only=ctx.cfg.auth.mode == "certificate"), done)
+
+    def action_mail(self) -> None:
+        user = self.selected()
+        if not user:
+            return
+        ctx = self.tg.ctx
+        if not user.email:
+            self.notify(T("{name} has no email address", name=user.name), severity="warning")
+            return
+        if ctx.mail_channel() is None:
+            self.notify(T("Add an email notification channel first (Settings → Notification channels); "
+                          "its SMTP server sends the profiles"), severity="warning", timeout=8)
+            return
+
+        async def done(confirmed: bool | None) -> None:
+            if confirmed:
+                email = await self.tg.run_op(ctx.send_profile, user.name)
+                if email:
+                    self.notify(T("✓ Profile emailed to {email}", email=email))
+
+        warning = "\n\n" + T("Certificate only: the profile alone is enough to connect.") \
+            if ctx.cfg.auth.mode == "certificate" else ""
+        self.app.push_screen(ConfirmDialog(T("Email profile"), T(
+            "Send [b]{name}[/b] their profile and setup steps at {email}? The password is not included.",
+            name=user.name, email=user.email) + warning, confirm_label="Send"), done)
 
     def action_password(self) -> None:
         user = self.selected()
@@ -881,6 +920,16 @@ class SettingsPage(Page):
                 yield Label(T("n: add · enter/e: edit · space: on/off · x: delete · t: test   (when the table is focused)"),
                             classes="hint")
             with panel(T("Server"), classes="settings-panel"):
+                with Horizontal(classes="field"):
+                    yield Label(T("Public address"), classes="field-name")
+                    yield Input(cfg.server.endpoint, id="srv-endpoint")
+                with Horizontal(classes="field"):
+                    yield Label(T("Port / protocol"), classes="field-name")
+                    yield Input(str(cfg.server.port), type="integer", id="srv-port", classes="narrow")
+                    yield FormSelect([("UDP", "udp"), ("TCP", "tcp")], value=cfg.server.protocol, allow_blank=False,
+                                     id="srv-protocol")
+                    yield Button(T("Apply"), id="srv-apply")
+                yield Label(T("Every profile contains these; changing them renews all profiles."), classes="hint")
                 yield Static(id="server-info")
             with panel(T("Updates"), classes="settings-panel"):
                 yield Static(id="update-info")
@@ -921,7 +970,6 @@ class SettingsPage(Page):
         self.query_one("#routes-value", Label).update(", ".join(cfg.tunnel.extra_routes) or "—")
         info = Text()
         for label, value in [
-            (T("Endpoint"), f"{cfg.server.endpoint}:{cfg.server.port}/{cfg.server.protocol}"),
             (T("VPN network"), f"{cfg.server.network} · DNS {server_ip(cfg)}"),
             (T("Public interface"), cfg.server.interface or "—"),
         ]:
@@ -1001,6 +1049,74 @@ class SettingsPage(Page):
         elif event.select.id == "auth-mode" and event.value != cfg.auth.mode:
             self.change_auth_mode(str(event.value))
 
+    def change_server(self) -> None:
+        ctx = self.tg.ctx
+        endpoint = self.query_one("#srv-endpoint", Input).value.strip()
+        try:
+            port = int(self.query_one("#srv-port", Input).value)
+        except ValueError:
+            self.notify(T("Port must be between 1 and 65535"), severity="error")
+            return
+        protocol = str(self.query_one("#srv-protocol", Select).value)
+        server = ctx.cfg.server
+        if (endpoint, port, protocol) == (server.endpoint, server.port, server.protocol):
+            return
+        target = f"{endpoint}:{port}/{protocol}"
+
+        async def done(confirmed: bool | None) -> None:
+            if not confirmed:
+                self.reset_server_fields()
+                return
+            created = await self.tg.run_op(ctx.set_server, endpoint=endpoint, port=port, protocol=protocol)
+            self.reset_server_fields()
+            if created is None:
+                return
+            self.tg.server_changed()
+            message = T("Every profile was renewed: send users their profile again.")
+            if isinstance(created, dict) and created:
+                self.app.push_screen(AccessDialog(T("✓ Clients connect to {target}", target=target), ctx.cfg,
+                                                  list(created.items())), lambda _: self.offer_send_all())
+            else:
+                self.notify(message, title=T("✓ Clients connect to {target}", target=target), timeout=10)
+                self.offer_send_all()
+
+        self.app.push_screen(ConfirmDialog(T("Change server address"), T(
+            "Clients will connect to [b]{target}[/b].\n\n"
+            "• Every .ovpn profile is renewed; users need their new profile\n"
+            "• OpenVPN restarts and connected users are disconnected\n"
+            "• Allow the new port in the cloud provider's firewall",
+            target=target,
+        ), confirm_label="Change"), done)
+
+    def offer_send_all(self) -> None:
+        """After every profile was renewed: offer to email them."""
+        ctx = self.tg.ctx
+        if ctx.mail_channel() is None or not any(u.email for u in ctx.store.users()):
+            return
+
+        async def done(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            result = await self.tg.run_op(ctx.send_profiles)
+            if result:
+                sent, skipped = result
+                self.notify(T("{sent} sent · {skipped} skipped", sent=len(sent), skipped=len(skipped)) +
+                            "".join(f"\n✗ {name}: {reason}" for name, reason in skipped),
+                            title=T("✓ Profiles emailed"), severity="warning" if skipped else "information",
+                            timeout=10)
+
+        warning = "\n\n" + T("Certificate only: the profile alone is enough to connect.") \
+            if ctx.cfg.auth.mode == "certificate" else ""
+        self.app.push_screen(ConfirmDialog(T("Email new profiles"), T(
+            "Email every user with an address their new profile and setup steps? Passwords are not included.")
+            + warning, confirm_label="Send"), done)
+
+    def reset_server_fields(self) -> None:
+        server = self.tg.ctx.cfg.server
+        self.query_one("#srv-endpoint", Input).value = server.endpoint
+        self.query_one("#srv-port", Input).value = str(server.port)
+        self.query_one("#srv-protocol", Select).value = server.protocol
+
     def change_auth_mode(self, mode: str) -> None:
         ctx = self.tg.ctx
         label = dict((key, text) for text, key in auth_options())[mode]
@@ -1014,10 +1130,12 @@ class SettingsPage(Page):
                 self.query_one("#auth-mode", Select).value = ctx.cfg.auth.mode
                 return
             if isinstance(created, dict) and created:
-                self.app.push_screen(AccessDialog(T("✓ Sign-in: {mode}", mode=label), ctx.cfg, list(created.items())))
+                self.app.push_screen(AccessDialog(T("✓ Sign-in: {mode}", mode=label), ctx.cfg, list(created.items())),
+                                     lambda _: self.offer_send_all())
             else:
                 self.notify(T("Every profile was renewed: send users their profile again."),
                             title=T("✓ Sign-in: {mode}", mode=label))
+                self.offer_send_all()
 
         self.app.push_screen(ConfirmDialog(T("Sign-in: {mode}", mode=label), T(
             "Change how users sign in to [b]{mode}[/b]?\n\n"
@@ -1049,6 +1167,8 @@ class SettingsPage(Page):
             self.edit_channel(new=True)
         elif event.button.id == "edit-routes":
             self.edit_routes()
+        elif event.button.id == "srv-apply":
+            self.change_server()
         elif event.button.id == "test":
             await self.test_channels()
         elif event.button.id == "uninstall":
