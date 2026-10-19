@@ -599,4 +599,6 @@ TR: dict[str, str] = {
     "✓ Profiles emailed": "✓ Profiller gönderildi",
     "Send": "Gönder",
     "Sign-in is certificate only: the profile alone is enough to connect, so anyone who reads the email can connect.": "Giriş yalnızca sertifikayla: profil tek başına bağlanmaya yeter, e-postayı okuyan herkes bağlanabilir.",
+    "Saved, but {services} did not start:\n{reasons}\nFind out why: sudo testops-gate doctor (r on the Dashboard)": "Kaydedildi, ancak {services} başlamadı:\n{reasons}\nNedenini bulun: sudo testops-gate doctor (Dashboard'da r)",
+    "✗ Service problem": "✗ Servis sorunu",
 }

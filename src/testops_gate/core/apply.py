@@ -20,9 +20,13 @@ from testops_gate.db import Store
 from testops_gate.paths import P
 from testops_gate.render import openvpn, system, unbound
 from testops_gate.system import nft, services
-from testops_gate.system.runner import run
+from testops_gate.system.runner import CommandError, run
 
 log = logging.getLogger(__name__)
+
+
+class ServiceError(RuntimeError):
+    """The files were written, but a service did not take them (it failed to reload or start)."""
 
 
 def write_if_changed(path: Path, content: str, mode: int = 0o644) -> bool:
@@ -106,16 +110,26 @@ def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
 
 
 def reload_changed(changed: set[str]) -> None:
+    """Reload what changed. Every service is tried; failures are reported together, with the
+    reason from the service's journal (systemctl itself only says that it failed)."""
+    failed: list[tuple[str, str]] = []
+
+    def attempt(name: str, unit: str, action) -> None:
+        try:
+            action()
+        except CommandError:
+            failed.append((name, unit))
+
     if "sysctl" in changed:
         run(["sysctl", "-p", str(P.sysctl_file)], check=False)
     if "nftables" in changed:
-        nft.load()
+        attempt("firewall", services.FIREWALL_UNIT, nft.load)
     if "unbound" in changed:
-        services.restart(services.UNBOUND_UNIT)
+        attempt("unbound", services.UNBOUND_UNIT, lambda: services.restart(services.UNBOUND_UNIT))
     elif "hosts" in changed:
-        services.reload_or_restart(services.UNBOUND_UNIT)
+        attempt("unbound", services.UNBOUND_UNIT, lambda: services.reload_or_restart(services.UNBOUND_UNIT))
     if "openvpn" in changed:
-        services.restart(services.OPENVPN_UNIT)
+        attempt("openvpn", services.OPENVPN_UNIT, lambda: services.restart(services.OPENVPN_UNIT))
     if "suricata-on" in changed:
         services.daemon_reload()
         services.systemctl("enable", services.SURICATA_UNIT, check=False)
@@ -123,5 +137,10 @@ def reload_changed(changed: set[str]) -> None:
         services.systemctl("enable", "--now", services.SURICATA_UPDATE_TIMER, check=False)
     if "suricata-off" in changed:
         services.disable_now(services.SURICATA_UNIT)
-        services.disable_now(services.SURICATA_UPDATE_TIMER)
-        services.daemon_reload()
+    if failed:
+        from testops_gate.core.doctor import journal_reason
+        from testops_gate.i18n import T
+
+        reasons = "\n".join(f"{name}: {journal_reason(unit, limit=2) or T('not running')}" for name, unit in failed)
+        raise ServiceError(T("Saved, but {services} did not start:\n{reasons}\nFind out why: sudo testops-gate doctor "
+                             "(r on the Dashboard)", services=", ".join(name for name, _ in failed), reasons=reasons))

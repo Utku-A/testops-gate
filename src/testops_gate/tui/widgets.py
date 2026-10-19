@@ -17,6 +17,7 @@ from textual.dom import DOMNode
 from textual.screen import ModalScreen
 from textual.widgets import Button, Digits, Label, Select, Static, Switch
 
+from testops_gate.core.apply import ServiceError
 from testops_gate.core.context import ValidationError
 from testops_gate.i18n import T
 
@@ -188,6 +189,12 @@ class FormScreen(ModalScreen[Any]):
         self.show_error("")
         try:
             result = await self.app.run_in_thread(self.submit, data)
+        except ServiceError as exc:
+            # Saved; only a service did not take it: close the form and say what is wrong
+            self.busy = False
+            self.dismiss(None)
+            self.app.notify(str(exc), title=T("✗ Service problem"), severity="error", timeout=20)
+            return
         except (ValidationError, RuntimeError, OSError) as exc:  # RuntimeError includes CommandError
             self.show_error(str(exc))
             return

@@ -3,6 +3,14 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.4.1 — 2026-10-19
+
+- When a service does not take a change (e.g. Unbound after adding a host), the error now says
+  that the change was saved, which service did not start and why (from its log), and points to
+  `testops-gate doctor`; before, it showed only `systemctl … failed (1):`. The dashboard closes
+  the form instead of leaving it open as if nothing was saved
+- One failing service no longer stops the others from reloading
+
 ## 0.4.0 — 2026-10-19
 
 - Change the port, protocol and public address after installation: Settings → Server in the
