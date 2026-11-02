@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 from testops_gate import __version__, logs
 from testops_gate import config as config_mod
+from testops_gate.core import nodes
 from testops_gate.core.apply import write_ccd
 from testops_gate.core.context import Context
 from testops_gate.daemon import parsers
@@ -429,6 +430,9 @@ class Daemon:
         if added:
             log.info("allowed VPN traffic through %s", ", ".join(added))
             logs.audit("firewall.allow", ", ".join(added), actor="testops-gated")
+        # a join command is waiting but its service stopped (reboot, crash): servers could not join
+        if nodes.ensure_join_service(self.ctx):
+            log.info("join command waiting: started the join service")
         if now - self.last_cleanup >= 3600:
             self.last_cleanup = now
             retention = self.ctx.cfg.logging.retention_days

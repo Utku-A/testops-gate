@@ -166,6 +166,7 @@ UninstallDialog, RepairDialog, NodeForm, JoinDialog { align: center middle; }
 .dialog Input, .dialog Select { width: 100%; }
 .dialog .hint { margin-top: 1; width: 100%; }
 .dialog .hint.warning { color: $warning; }
+.dialog .hint.error { color: $error; }
 .dialog-message { margin-bottom: 1; }
 #f-error { color: $error; text-style: bold; margin-top: 1; height: auto; }
 .dialog-buttons { height: auto; margin-top: 1; align-horizontal: right; }

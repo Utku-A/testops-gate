@@ -22,6 +22,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -99,6 +100,11 @@ def request(url: str, context: ssl.SSLContext, body: dict | None = None) -> byte
     except (urllib.error.URLError, OSError) as exc:
         host = url.split("/")[2]
         reason = getattr(exc, "reason", exc)
+        if isinstance(reason, ConnectionRefusedError):
+            fail(f"the join service at {host} is not running (connection refused)",
+                 "The join command has probably expired. On the VPN server, create a new one:",
+                 "    sudo testops-gate node add NAME      (dashboard: Servers → n)",
+                 "If it has not expired, see why the join service stopped: sudo journalctl -u testops-gate-enroll -n 20")
         if isinstance(reason, ssl.SSLError):
             fail(f"secure connection to the join service at {host} failed: {reason}",
                  "Update testops-gate on both servers and create a new join command.")
@@ -208,8 +214,10 @@ def status() -> int:
         return 1
     node = json.loads((CONF_DIR / "node.json").read_text())
     active = run("systemctl", "is-active", UNIT, check=False).stdout.strip() == "active"
-    up = node["vpn_ip"] in run("ip", "-4", "addr", "show", "dev", DEVICE, check=False).stdout
-    print(f"{node['name']} · {node['fqdn']} · {node['vpn_ip']} via {node['remote']}")
+    # the address comes from the device: the VPN server may have given this server a new one
+    match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", run("ip", "-4", "addr", "show", "dev", DEVICE, check=False).stdout)
+    up = bool(match)
+    print(f"{node['name']} · {node['fqdn']} · {match.group(1) if match else node['vpn_ip']} via {node['remote']}")
     print(f"connection: {'up' if active and up else 'down'} ({UNIT}: {'active' if active else 'inactive'})")
     return 0 if active and up else 3
 

@@ -250,9 +250,19 @@ curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- join tgj1_…
   kullanıcılara yeni bağlantı açamaz. Sunucunun kendi internet trafiği ve DNS'i değişmez (systemd-resolved varsa
   yalnızca `*.internal` adları VPN üzerinden çözülür).
 - Bağlantı açılışta başlar, koparsa kendiliğinden yeniden bağlanır.
+- Komutu kopyalayamadıysanız ya da süresi dolduysa: Sunucular sayfasında satırı seçip `n` ile yeni komut oluşturun
+  (eskisi geçersiz olur). `e` ile katılmış sunucunun VPN adresini ve notunu değiştirebilirsiniz; yeni adres hemen
+  uygulanır, sunucu bu adresle yeniden bağlanır.
+- Katılırken **`Connection refused`** hatası: VPN sunucusunda 8443'te dinleyen yok. Genellikle komutun süresi dolmuştur
+  (servis bekleyen komut kalmayınca durur); yeni komut oluşturun. Bekleyen komut varken servis durursa (yeniden
+  başlatma vb.) testops-gated onu bir dakika içinde tekrar başlatır. Nedenini görmek için:
+  `sudo journalctl -u testops-gate-enroll -n 20`. Zaman aşımı (`timed out`) ise bulut güvenlik duvarını gösterir.
 
 ```bash
-sudo testops-gate node list               # durum: çevrimiçi / çevrimdışı / katılmayı bekliyor
+sudo testops-gate node list               # durum: çevrimiçi / çevrimdışı / katılmayı bekliyor / süresi doldu
+sudo testops-gate node add web-01         # henüz katılmamış sunucu için yeni komut (eskisi geçersiz olur)
+sudo testops-gate node edit web-01 --ip 10.8.0.50 --note "API"   # katılmış sunucu: adres, not
+sudo testops-gate node edit web-01 --rename web-02               # henüz katılmamış sunucunun adı
 sudo testops-gate node remove web-01      # sertifikayı iptal eder
 sudo testops-gate-node status             # katılan sunucuda
 sudo testops-gate-node leave              # katılan sunucuda: VPN'den çık
@@ -390,6 +400,7 @@ testops-gate logs     USER|security|audit [--since 2h] [--day D] [--kind dns] [-
 | `enter`, `→` | Bölüme gir · `esc`, `←` menüye dön · `1`–`7` doğrudan atla |
 | `a` `e` `x` `space` | Ekle · düzenle · sil · aç/kapat |
 | `o` `r` `p` `/` | Profil dışa aktar · sertifika yenile · yeni parola · ara (Kullanıcılar) |
+| `n` | Yeni katılma komutu (Sunucular) |
 | `t` | DNS testi (Hostlar), log filtresi (Loglar), test bildirimi (kanal tablosu) |
 | `[` `]` `f` | Önceki/sonraki gün · canlı takip (Loglar) |
 | `b` `p` | Engelli ağlar · yasaklı portlar (Güvenlik) |

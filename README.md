@@ -79,6 +79,7 @@ sudo testops-gate user passwd alice                  # new password
 sudo testops-gate user send alice                    # email the profile (+ setup steps, never the password)
 sudo testops-gate host add stage.internal 10.0.5.20
 sudo testops-gate node add web-01                    # prints a one-time join command for that server
+sudo testops-gate node edit web-01 --ip 10.8.0.50    # change a joined server's address (or --note, --rename)
 sudo testops-gate tunnel set full                    # or: split
 sudo testops-gate settings port 443 --protocol tcp   # move the VPN; every profile is renewed
 sudo testops-gate notify add slack --name '#vpn-alerts' --webhook https://hooks.slack.com/services/…

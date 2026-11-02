@@ -277,6 +277,11 @@ class Store:
                       (node.name, node.vpn_ip, int(node.enabled), node.created_at, node.cert_expires,
                        node.password_hash, node.note))
 
+    def update_node(self, name: str, **fields: object) -> None:
+        assignments = ", ".join(f"{key} = ?" for key in fields)
+        with self.tx() as c:
+            c.execute(f"UPDATE nodes SET {assignments} WHERE name = ?", (*fields.values(), name))
+
     def delete_node(self, name: str) -> None:
         with self.tx() as c:
             c.execute("DELETE FROM nodes WHERE name = ?", (name,))

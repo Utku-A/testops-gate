@@ -520,21 +520,44 @@ class RepairDialog(ModalScreen[bool]):
 
 
 class NodeForm(FormScreen):
-    """Name of a server to join, and how long its join command works."""
+    """A new server (name and how long its join command works), or an existing one: a joined server's
+    VPN address and note, or the name of one that has not joined yet (it gets a new command)."""
+
+    def __init__(self, submit: Callable[[dict], Any], row: dict | None = None) -> None:
+        super().__init__(submit)
+        self.row = row
+
+    @property
+    def joined(self) -> bool:
+        return bool(self.row and self.row["vpn_ip"])
 
     def compose(self) -> ComposeResult:
+        row = self.row
         with Vertical(classes="dialog") as dialog:
-            dialog.border_title = T("Add a server")
-            yield Label(T("Server name"), classes="field-label")
-            yield Input(placeholder=T("e.g. web-01"), restrict=r"[a-z0-9-]*", max_length=32, id="f-name")
-            yield Label(T("Join command works for"), classes="field-label")
-            yield FormSelect([(T("15 minutes"), "15"), (T("1 hour"), "60"), (T("4 hours"), "240"), (T("1 day"), "1440")],
-                             value="60", allow_blank=False, id="f-minutes")
-            yield Label(T("You get a one-time command to run on that server; its key is made there."), classes="hint")
+            dialog.border_title = T("Edit server · {name}", name=row["name"]) if row else T("Add a server")
+            if self.joined:
+                yield Label(T("VPN IP"), classes="field-label")
+                yield Input(row["vpn_ip"], restrict=r"[0-9.]*", max_length=15, id="f-ip")
+                yield Label(T("Note"), classes="field-label")
+                yield Input(row.get("note", ""), placeholder=T("e.g. production API"), max_length=80, id="f-note")
+                yield Label(T("A new address applies at once: the server reconnects with it. To rename a joined "
+                              "server, remove it and add it again."), classes="hint")
+            else:
+                yield Label(T("Server name"), classes="field-label")
+                yield Input(row["name"] if row else "", placeholder=T("e.g. web-01"), restrict=r"[a-z0-9-]*",
+                            max_length=32, id="f-name")
+                yield Label(T("Join command works for"), classes="field-label")
+                yield FormSelect([(T("15 minutes"), "15"), (T("1 hour"), "60"), (T("4 hours"), "240"),
+                                  (T("1 day"), "1440")], value="60", allow_blank=False, id="f-minutes")
+                yield Label(T("You get a one-time command to run on that server; its key is made there.") if not row
+                            else T("You get a new join command; the old one stops working."), classes="hint")
             yield Label("", id="f-error")
             yield self.buttons()
 
     def collect(self) -> dict:
+        if self.joined:
+            return {"vpn_ip": self.query_one("#f-ip", Input).value.strip(),
+                    "note": self.query_one("#f-note", Input).value}
         name = self.query_one("#f-name", Input).value.strip()
         if not name:
             raise ValidationError(T("Server name cannot be empty"))
@@ -546,9 +569,9 @@ class JoinDialog(ModalScreen[None]):
 
     BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "copy", "Copy")]
 
-    def __init__(self, name: str, command: str, until: str, port: int) -> None:
+    def __init__(self, name: str, command: str, until: str, port: int, problem: str = "") -> None:
         super().__init__()
-        self._name, self._command, self._until, self._port = name, command, until, port
+        self._name, self._command, self._until, self._port, self._problem = name, command, until, port, problem
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog wide") as dialog:
@@ -558,8 +581,11 @@ class JoinDialog(ModalScreen[None]):
             yield Label(T("Open {port}/tcp to this VPN server in the cloud provider's firewall while joining: the "
                           "server connects there once. The join service stops by itself afterwards.", port=self._port),
                         classes="hint warning")
-            yield Label(T("Selecting it with the mouse may break the line: press c to copy it. If your terminal does "
-                          "not allow that, create it in a shell instead: sudo testops-gate node add {name}",
+            if self._problem:
+                yield Label(T("The join service is not listening on {port}/tcp, so the command cannot work yet: "
+                              "{problem}", port=self._port, problem=self._problem), classes="hint error")
+            yield Label(T("Selecting it with the mouse may break the line: press c to copy it. Lost it? Press n on "
+                          "the Servers page for a new one, or in a shell: sudo testops-gate node add {name}",
                           name=self._name), classes="hint")
             with Horizontal(classes="dialog-buttons"):
                 yield Button(T("Copy  c"), id="copy")

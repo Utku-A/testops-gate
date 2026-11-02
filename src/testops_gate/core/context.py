@@ -104,7 +104,8 @@ class Context:
                 return str(address)
         raise ValidationError(T("No free VPN addresses left in {net}", net=net))
 
-    def _validate_user_ip(self, vpn_ip: str, name: str) -> None:
+    def _validate_user_ip(self, vpn_ip: str, name: str, node: bool = False) -> None:
+        """A free client address; `name` is the user (or with node=True, the server) that keeps it."""
         net = openvpn.network(self.cfg)
         try:
             address = ipaddress.IPv4Address(vpn_ip)
@@ -112,8 +113,8 @@ class Context:
             raise ValidationError(T("Enter a valid IPv4 address")) from None
         if address not in net or address in (net.network_address, net.broadcast_address, next(net.hosts())):
             raise ValidationError(T("The address must be a client address inside {net}", net=net))
-        other = next((u for u in self.store.users() if u.vpn_ip == vpn_ip and u.name != name), None) or \
-            next((n for n in self.store.nodes() if n.vpn_ip == vpn_ip), None)
+        other = next((u for u in self.store.users() if u.vpn_ip == vpn_ip and (node or u.name != name)), None) or \
+            next((n for n in self.store.nodes() if n.vpn_ip == vpn_ip and not (node and n.name == name)), None)
         if other:
             raise ValidationError(T("{ip} is already used by {name}", ip=vpn_ip, name=other.name))
 

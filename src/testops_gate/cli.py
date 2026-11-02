@@ -367,6 +367,13 @@ def print_join(ctx, token, token_string) -> None:
     print()
     print(T("Open {port}/tcp to this server in the cloud provider's firewall while joining: the joining server "
             "connects there once. The join service stops by itself afterwards.", port=ctx.cfg.nodes.enroll_port))
+    problem = nodes.join_service_problem(ctx)
+    if problem:
+        print()
+        print(T("Warning: the join service is not listening on {port}/tcp, so the command cannot work yet:",
+                port=ctx.cfg.nodes.enroll_port), file=sys.stderr)
+        print(f"  {problem}", file=sys.stderr)
+        print(T("Details: sudo journalctl -u testops-gate-enroll -n 20"), file=sys.stderr)
 
 
 def cmd_node(args: argparse.Namespace) -> int:
@@ -374,13 +381,27 @@ def cmd_node(args: argparse.Namespace) -> int:
 
     ctx = open_context()
     if args.node_action == "add":
+        # also for a server that has not joined yet: a new command replaces its old one
         token, token_string = nodes.create_join_token(ctx, args.name, args.minutes)
         print_join(ctx, token, token_string)
+    elif args.node_action == "edit":
+        if ctx.store.node(args.name):
+            if args.rename:
+                raise ValidationError(T("{name} has already joined; remove it and add it again under the new name",
+                                        name=args.name))
+            node = nodes.update_node(ctx, args.name, vpn_ip=args.ip, note=args.note)
+            print(T("{name} updated · {ip}", name=node.name, ip=node.vpn_ip))
+        elif args.rename:
+            token, token_string = nodes.rename_waiting(ctx, args.name, args.rename, args.minutes)
+            print_join(ctx, token, token_string)
+        else:
+            raise ValidationError(T("{name} has not joined yet: only --rename can be changed", name=args.name))
     elif args.node_action == "list":
-        states = {"online": T("online"), "offline": T("offline"), "waiting": T("waiting to join")}
-        print(table([T("Server"), "VPN IP", T("DNS name"), T("Status"), T("Real IP")],
-                    [[r["name"], r["vpn_ip"] or "—", r["fqdn"], states[r["state"]], r["real_ip"] or "—"]
-                     for r in nodes.node_rows(ctx)]))
+        states = {"online": T("online"), "offline": T("offline"), "waiting": T("waiting to join"),
+                  "expired": T("join command expired")}
+        print(table([T("Server"), "VPN IP", T("DNS name"), T("Status"), T("Real IP"), T("Note")],
+                    [[r["name"], r["vpn_ip"] or "—", r["fqdn"], states[r["state"]], r["real_ip"] or "—",
+                      r["note"] or "—"] for r in nodes.node_rows(ctx)]))
     elif args.node_action == "remove":
         if not confirm(T("Remove {name}? Its certificate is revoked and it disconnects.", name=args.name), args.yes):
             return 1
@@ -737,9 +758,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("node", help="servers in the VPN: join with a one-time command")
     ns = p.add_subparsers(dest="node_action", required=True)
-    a = ns.add_parser("add", help="create a one-time join command for a server")
+    a = ns.add_parser("add", help="create a one-time join command for a server (again: a new command)")
     a.add_argument("name", help="e.g. web-01 (reachable as web-01.internal)")
     a.add_argument("--minutes", type=int, help="how long the join command works (default 60)")
+    a = ns.add_parser("edit", help="change a server's VPN address or note; rename one that has not joined")
+    a.add_argument("name")
+    a.add_argument("--ip", help="new VPN address (the server reconnects with it)")
+    a.add_argument("--note")
+    a.add_argument("--rename", help="new name for a server that has not joined yet (prints a new command)")
+    a.add_argument("--minutes", type=int, help="with --rename: how long the new command works")
     ns.add_parser("list")
     a = ns.add_parser("remove", help="remove a server (or cancel its join command)")
     a.add_argument("name")

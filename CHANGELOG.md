@@ -3,6 +3,20 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.5.2 — 2026-11-02
+
+- Servers page: `e` edits a server — a joined server's VPN address (it reconnects with it at
+  once) and note, or the name of one that has not joined yet. `n` creates a new join command for
+  a server that has not joined, for when the first one could not be copied or expired; the old
+  command stops working. CLI: `testops-gate node edit NAME --ip/--note/--rename`, and
+  `node add NAME` again for a new command
+- A join command that expired is listed as "join command expired" instead of disappearing
+- Joining failed with "Connection refused" when the join service had stopped while a command was
+  still waiting (after a reboot, for example): testops-gated now starts it again within a minute.
+  `node add` warns when the service does not come up, and the joining server explains that the
+  command has probably expired instead of pointing at the firewall
+- `testops-gate-node status` shows the server's current VPN address
+
 ## 0.5.1 — 2026-11-02
 
 - Joining a server failed on systems with Python 3.13 or later (Debian 13, Ubuntu 25.04 and later) with

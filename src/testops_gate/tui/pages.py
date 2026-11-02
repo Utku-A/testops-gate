@@ -488,6 +488,8 @@ class NodesPage(Page):
     FOCUS_TARGET = "#nodes-table"
     BINDINGS = [
         Binding("a", "add", "Add"),
+        Binding("e", "edit", "Edit"),
+        Binding("n", "new_command", "New join command"),
         Binding("x,delete", "delete", "Remove"),
     ]
 
@@ -496,11 +498,11 @@ class NodesPage(Page):
         with panel(T("Servers"), id="nodes-panel"):
             yield DataTable(id="nodes-table", cursor_type="row", zebra_stripes=True)
             yield Label(T("Servers reach each other, users reach servers, servers cannot open connections to users. "
-                          "a: add a server"), classes="hint", id="nodes-hint")
+                          "a: add a server · e: edit · n: new join command"), classes="hint", id="nodes-hint")
 
     def on_mount(self) -> None:
         self.query_one("#nodes-table", DataTable).add_columns(
-            T("Server"), "VPN IP", T("DNS name"), T("Status"), T("Real IP"))
+            T("Server"), "VPN IP", T("DNS name"), T("Status"), T("Real IP"), T("Note"))
         self.refresh_data()
 
     def refresh_data(self) -> None:
@@ -513,14 +515,16 @@ class NodesPage(Page):
                 state = Text(T("● online"), GREEN)
             elif r["state"] == "waiting":
                 state = Text(T("◌ waiting to join · until {time}", time=hhmm(r["expires"])), YELLOW)
+            elif r["state"] == "expired":
+                state = Text(T("✕ join command expired · n: new"), RED)
             else:
                 state = Text(T("○ offline"), "dim")
             table.add_row(Text(r["name"], "bold"), r["vpn_ip"] or "—", r["fqdn"], state, r["real_ip"] or "—",
-                          key=r["name"])
+                          r["note"] or "—", key=r["name"])
         self.keep_cursor(table, len(rows), cursor)
         online = sum(1 for r in rows if r["state"] == "online")
         self.query_one("#nodes-panel").border_subtitle = T("{online} of {total} online", online=online,
-                                                           total=sum(1 for r in rows if r["state"] != "waiting"))
+                                                           total=sum(1 for r in rows if r["vpn_ip"]))
 
     def selected(self):
         rows = self.tg.snapshot.nodes
@@ -533,16 +537,64 @@ class NodesPage(Page):
         ctx = self.tg.ctx
 
         def submit(data: dict):
-            token, token_string = nodes.create_join_token(ctx, data["name"], data["minutes"])
-            return token, nodes.join_command(ctx, token, token_string)
+            return self._join(nodes.create_join_token(ctx, data["name"], data["minutes"]))
 
-        def done(result) -> None:
-            if result:
-                token, command = result
-                self.tg.refresh_snapshot()
-                self.app.push_screen(JoinDialog(token.node, command, hhmm(token.expires), ctx.cfg.nodes.enroll_port))
+        self.app.push_screen(NodeForm(submit), self._show_join)
 
-        self.app.push_screen(NodeForm(submit), done)
+    def _join(self, created) -> tuple:
+        """Runs in the form's thread: the command, and whether the join service came up."""
+        from testops_gate.core import nodes
+
+        ctx = self.tg.ctx
+        token, token_string = created
+        return token, nodes.join_command(ctx, token, token_string), nodes.join_service_problem(ctx)
+
+    def _show_join(self, result) -> None:
+        if result:
+            token, command, problem = result
+            self.tg.refresh_snapshot()
+            self.app.push_screen(JoinDialog(token.node, command, hhmm(token.expires),
+                                            self.tg.ctx.cfg.nodes.enroll_port, problem))
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self.action_edit()
+
+    def action_edit(self) -> None:
+        from testops_gate.core import nodes
+
+        row = self.selected()
+        if not row:
+            return
+        ctx = self.tg.ctx
+        if row["vpn_ip"]:
+            def submit(data: dict):
+                return nodes.update_node(ctx, row["name"], vpn_ip=data["vpn_ip"], note=data["note"])
+
+            def done(result) -> None:
+                if result:
+                    self.tg.refresh_snapshot()
+                    self.notify(T("{name} updated · {ip}", name=result.name, ip=result.vpn_ip))
+
+            self.app.push_screen(NodeForm(submit, row), done)
+        else:
+            def rename(data: dict):
+                return self._join(nodes.rename_waiting(ctx, row["name"], data["name"], data["minutes"]))
+
+            self.app.push_screen(NodeForm(rename, row), self._show_join)
+
+    async def action_new_command(self) -> None:
+        from testops_gate.core import nodes
+
+        row = self.selected()
+        if not row:
+            return
+        if row["vpn_ip"]:
+            self.notify(T("{name} has already joined. To join it again (for example after reinstalling it), remove "
+                          "it and add it again.", name=row["name"]), severity="warning")
+            return
+        ctx = self.tg.ctx
+        result = await self.tg.run_op(lambda: self._join(nodes.create_join_token(ctx, row["name"])))
+        self._show_join(result)
 
     def action_delete(self) -> None:
         from testops_gate.core import nodes

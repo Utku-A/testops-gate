@@ -94,6 +94,32 @@ def create_join_token(ctx: Context, name: str, minutes: int | None = None) -> tu
     return token, f"{token_id}.{secret}"
 
 
+def join_service_problem(ctx: Context, wait: float = 5.0) -> str:
+    """Why the join service is not listening after a token was created ("" when it is)."""
+    if not ctx.reload:
+        return ""
+    from testops_gate.core.doctor import journal_reason
+
+    port = ctx.cfg.nodes.enroll_port
+    deadline = time.time() + wait
+    while True:
+        if run(["ss", "-H", "-ltn", "sport", "=", f":{port}"], check=False).stdout.strip():
+            return ""
+        if time.time() >= deadline:
+            break
+        time.sleep(0.25)
+    return journal_reason(ENROLL_UNIT, limit=2) or T("not running")
+
+
+def ensure_join_service(ctx: Context) -> bool:
+    """Start the join service when a join command is waiting but the service is not running (the
+    server rebooted, or it stopped); True if it was started."""
+    if not ctx.reload or not pending_tokens(ctx) or services.is_active([ENROLL_UNIT])[ENROLL_UNIT]:
+        return False
+    services.systemctl("start", ENROLL_UNIT, check=False)
+    return True
+
+
 def _with_port(cfg, port: int):
     return replace(cfg, server=replace(cfg.server, port=port, protocol="tcp"))
 
@@ -115,6 +141,48 @@ def join_command(ctx: Context, token: JoinToken, token_string: str) -> str:
 
 def pending_tokens(ctx: Context) -> list[JoinToken]:
     return [t for t in ctx.store.tokens() if t.usable() and not ctx.store.node(t.node)]
+
+
+def expired_tokens(ctx: Context) -> list[JoinToken]:
+    """The latest join command of each server that never joined and whose command expired."""
+    latest: dict[str, JoinToken] = {}
+    for token in ctx.store.tokens():  # oldest first
+        latest[token.node] = token
+    return [t for t in latest.values() if not t.used_at and not t.usable() and not ctx.store.node(t.node)]
+
+
+def update_node(ctx: Context, name: str, *, vpn_ip: str | None = None, note: str | None = None) -> Node:
+    """Change a joined server's VPN address or note; a new address applies when it reconnects,
+    which it is told to do at once."""
+    node = ctx.store.node(name)
+    if not node:
+        raise ValidationError(T("No such server: {name}", name=name))
+    fields: dict[str, object] = {}
+    if vpn_ip is not None and vpn_ip.strip() != node.vpn_ip:
+        vpn_ip = vpn_ip.strip()
+        ctx._validate_user_ip(vpn_ip, name, node=True)
+        fields["vpn_ip"] = vpn_ip
+    if note is not None and note.strip() != node.note:
+        fields["note"] = note.strip()
+    if fields:
+        ctx.store.update_node(name, **fields)
+        if "vpn_ip" in fields:
+            ctx.apply()  # ccd, DNS name and firewall set
+            ctx.reconnect([node.cn])
+        logs.audit("node.edit", f"{name} " + " ".join(f"{k}={v}" for k, v in fields.items()))
+    return ctx.store.node(name)
+
+
+def rename_waiting(ctx: Context, name: str, new_name: str, minutes: int | None = None) -> tuple[JoinToken, str]:
+    """A server that has not joined yet under another name: its old join command stops working."""
+    if ctx.store.node(name):
+        raise ValidationError(T("{name} has already joined; remove it and add it again under the new name",
+                                name=name))
+    token = create_join_token(ctx, new_name, minutes)
+    if new_name.strip().lower() != name:
+        ctx.store.delete_node(name)  # drops its join tokens
+        logs.audit("node.rename", f"{name} -> {token[0].node}")
+    return token
 
 
 def _csr_subject(path: str) -> str:
@@ -208,8 +276,9 @@ def node_rows(ctx: Context) -> list[dict]:
         client = live.get(node.cn)
         rows.append({"name": node.name, "vpn_ip": node.vpn_ip, "fqdn": f"{node.name}.{ctx.cfg.nodes.domain}",
                      "state": "online" if client else "offline", "real_ip": client.real_ip if client else "",
-                     "since": client.connected_since if client else 0.0, "expires": 0.0})
-    for token in pending_tokens(ctx):
-        rows.append({"name": token.node, "vpn_ip": "", "fqdn": f"{token.node}.{ctx.cfg.nodes.domain}",
-                     "state": "waiting", "real_ip": "", "since": 0.0, "expires": token.expires})
+                     "since": client.connected_since if client else 0.0, "expires": 0.0, "note": node.note})
+    for state, tokens in (("waiting", pending_tokens(ctx)), ("expired", expired_tokens(ctx))):
+        for token in tokens:
+            rows.append({"name": token.node, "vpn_ip": "", "fqdn": f"{token.node}.{ctx.cfg.nodes.domain}",
+                         "state": state, "real_ip": "", "since": 0.0, "expires": token.expires, "note": ""})
     return sorted(rows, key=lambda r: r["name"])
