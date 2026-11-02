@@ -19,6 +19,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -29,6 +30,7 @@ from dataclasses import replace
 
 from testops_gate import logs
 from testops_gate.core import passwords
+from testops_gate.core.apply import ServiceError
 from testops_gate.core.context import LABEL_RE, Context, ValidationError
 from testops_gate.db import JoinToken, Node, node_cn
 from testops_gate.i18n import T
@@ -39,6 +41,7 @@ from testops_gate.system.easyrsa import EasyRSA
 from testops_gate.system.runner import CommandError, run
 
 ENROLL_UNIT = "testops-gate-enroll.service"
+log = logging.getLogger("testops-gate-enroll")
 NODE_CERT_DAYS = 1825
 BLOB_PREFIX = "tgj1_"
 SUBJECT_RE = re.compile(r"subject=\s*CN\s*=\s*(\S+)\s*$")
@@ -209,24 +212,39 @@ def enroll(ctx: Context, token_string: str, csr_pem: str) -> dict:
     with tempfile.NamedTemporaryFile("w", suffix=".req", dir=P.state_dir, delete=False) as fh:
         fh.write(csr_pem)
         csr_path = fh.name
+    pki = EasyRSA()
     try:
         if _csr_subject(csr_path) != cn:
             raise EnrollError(f"the certificate request must be for CN={cn}")
         if not ctx.store.use_token(token_id):
             raise EnrollError("invalid or expired join token")
-        pki = EasyRSA()
-        if pki.cert(cn).exists():
-            pki.revoke(cn)
-        pki.remove_issued(cn)
-        pki.sign_request(cn, csr_path, NODE_CERT_DAYS)
+        try:
+            if pki.cert(cn).exists():
+                pki.revoke(cn)
+            pki.remove_issued(cn)
+            pki.sign_request(cn, csr_path, NODE_CERT_DAYS)
+        except Exception:
+            ctx.store.release_token(token_id)
+            raise
     finally:
         os.unlink(csr_path)
-    ctx.refresh_crl()
     now = time.time()
     password = passwords.generate(32)
-    node = Node(name, ctx.allocate_ip(), True, now, now + NODE_CERT_DAYS * 86400, passwords.hash_password(password))
-    ctx.store.add_node(node)
-    ctx.apply()
+    try:
+        ctx.refresh_crl()
+        node = Node(name, ctx.allocate_ip(), True, now, now + NODE_CERT_DAYS * 86400,
+                    passwords.hash_password(password))
+        ctx.store.add_node(node)
+        try:
+            ctx.apply()
+        except ServiceError as exc:
+            # The server is in: its ccd and password are written and OpenVPN reads them on each
+            # connection. A service that did not reload (DNS names, firewall) is not a reason to
+            # turn it away with a used-up join command; the reason goes to the journal.
+            log.warning("%s joined, but: %s", name, exc)
+    except Exception:
+        _undo_join(ctx, pki, name, token_id)
+        raise
     logs.audit("node.join", f"{name} vpn_ip={node.vpn_ip}", actor="testops-gate-enroll")
     server = ctx.cfg.server
     return {
@@ -249,6 +267,23 @@ def enroll(ctx: Context, token_string: str, csr_pem: str) -> dict:
         "domain": ctx.cfg.nodes.domain,
         "fqdn": f"{name}.{ctx.cfg.nodes.domain}",
     }
+
+
+def _undo_join(ctx: Context, pki: EasyRSA, name: str, token_id: str) -> None:
+    """A join that failed after the certificate was signed: take it back and make the join command
+    work again, so the joining server can simply retry it."""
+    cn = node_cn(name)
+    try:
+        with ctx.store.tx() as c:
+            c.execute("DELETE FROM nodes WHERE name = ?", (name,))
+        ctx.store.release_token(token_id)
+        if pki.cert(cn).exists():
+            pki.revoke(cn)
+            ctx.refresh_crl()
+        pki.remove_issued(cn)
+        ctx.apply()
+    except Exception:  # noqa: BLE001 - the original error is the one to report
+        log.exception("could not undo the failed join of %s", name)
 
 
 def remove_node(ctx: Context, name: str) -> None:

@@ -647,7 +647,6 @@ TR: dict[str, str] = {
     "◌ waiting to join · until {time}": "◌ katılmayı bekliyor · {time} saatine kadar",
     "{n} users · {s} servers": "{n} kullanıcı · {s} sunucu",
     "Servers reach each other, users reach servers, servers cannot open connections to users. a: add a server · e: edit · n: new join command": "Sunucular birbirine, kullanıcılar sunuculara erişir; sunucular kullanıcılara bağlantı açamaz. a: sunucu ekle · e: düzenle · n: yeni katılma komutu",
-    "Selecting it with the mouse may break the line: press c to copy it. Lost it? Press n on the Servers page for a new one, or in a shell: sudo testops-gate node add {name}": "Fareyle seçmek satırı bozabilir: kopyalamak için c'ye basın. Kopyalayamadınız mı? Sunucular sayfasında n ile yenisini oluşturun ya da kabukta: sudo testops-gate node add {name}",
     "A new address applies at once: the server reconnects with it. To rename a joined server, remove it and add it again.": "Yeni adres hemen uygulanır: sunucu bu adresle yeniden bağlanır. Katılmış bir sunucunun adını değiştirmek için silip yeniden ekleyin.",
     "Details: sudo journalctl -u testops-gate-enroll -n 20": "Ayrıntılar: sudo journalctl -u testops-gate-enroll -n 20",
     "Edit server · {name}": "Sunucuyu düzenle · {name}",
@@ -663,4 +662,5 @@ TR: dict[str, str] = {
     "{name} has not joined yet: only --rename can be changed": "{name} henüz katılmadı: yalnızca --rename değiştirilebilir",
     "{name} updated · {ip}": "{name} güncellendi · {ip}",
     "✕ join command expired · n: new": "✕ katılma komutunun süresi doldu · n: yeni",
+    "Selecting it with the mouse may break the line: press c to copy it. Lost it? Press n on the Servers page for a new one, or run this on the VPN server:": "Fareyle seçmek satırı bozabilir: kopyalamak için c'ye basın. Kopyalayamadınız mı? Sunucular sayfasında n ile yenisini oluşturun ya da VPN sunucusunda şunu çalıştırın:",
 }

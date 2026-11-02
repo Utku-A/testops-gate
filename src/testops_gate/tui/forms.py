@@ -585,8 +585,8 @@ class JoinDialog(ModalScreen[None]):
                 yield Label(T("The join service is not listening on {port}/tcp, so the command cannot work yet: "
                               "{problem}", port=self._port, problem=self._problem), classes="hint error")
             yield Label(T("Selecting it with the mouse may break the line: press c to copy it. Lost it? Press n on "
-                          "the Servers page for a new one, or in a shell: sudo testops-gate node add {name}",
-                          name=self._name), classes="hint")
+                          "the Servers page for a new one, or run this on the VPN server:"), classes="hint")
+            yield Static(Text(f"sudo testops-gate node add {self._name}", style="bold"), classes="hint")
             with Horizontal(classes="dialog-buttons"):
                 yield Button(T("Copy  c"), id="copy")
                 yield Button(T("Close"), variant="primary", id="close")

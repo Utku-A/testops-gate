@@ -114,6 +114,15 @@ def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
     return changed
 
 
+def _reload_or_restart(unit: str) -> None:
+    """Reload, and restart if the reload fails: unbound reloads with `kill -HUP $MAINPID`, which
+    fails while it is between processes (crashed, restarting); a restart then brings it back."""
+    try:
+        services.reload_or_restart(unit)
+    except CommandError:
+        services.restart(unit)
+
+
 def reload_changed(changed: set[str]) -> None:
     """Reload what changed. Every service is tried; failures are reported together, with the
     reason from the service's journal (systemctl itself only says that it failed)."""
@@ -132,7 +141,7 @@ def reload_changed(changed: set[str]) -> None:
     if "unbound" in changed:
         attempt("unbound", services.UNBOUND_UNIT, lambda: services.restart(services.UNBOUND_UNIT))
     elif "hosts" in changed:
-        attempt("unbound", services.UNBOUND_UNIT, lambda: services.reload_or_restart(services.UNBOUND_UNIT))
+        attempt("unbound", services.UNBOUND_UNIT, lambda: _reload_or_restart(services.UNBOUND_UNIT))
     if "openvpn" in changed:
         attempt("openvpn", services.OPENVPN_UNIT, lambda: services.restart(services.OPENVPN_UNIT))
     if "suricata-on" in changed:

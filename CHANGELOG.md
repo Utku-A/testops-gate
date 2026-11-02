@@ -3,6 +3,20 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.5.3 — 2026-11-03
+
+- A server could not join when a service on the VPN server failed to reload during the join
+  (seen with unbound): the join was answered with an error although the server had been added,
+  and its one-time command was used up, so every retry got "Connection refused". Now the join
+  goes through (the server's address and password are in place; the reason is logged in the
+  join service's journal), and a join that really fails is rolled back so the same command can
+  be run again
+- A reload that fails (unbound reloads with `kill -HUP`, which fails while it is restarting) is
+  followed by one restart before it is reported
+- `testops-gate-node add/list/remove/edit` (easy to mix up with `testops-gate node …`) now says
+  that servers are managed on the VPN server and prints the command to run there; the join
+  dialog shows that command on a line of its own
+
 ## 0.5.2 — 2026-11-02
 
 - Servers page: `e` edits a server — a joined server's VPN address (it reconnects with it at

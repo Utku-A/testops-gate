@@ -301,6 +301,11 @@ class Store:
     def tokens(self) -> list[JoinToken]:
         return [JoinToken(**dict(r)) for r in self.conn.execute("SELECT * FROM join_tokens ORDER BY created_at")]
 
+    def release_token(self, token_id: str) -> None:
+        """A join that failed on our side: its token works again."""
+        with self.tx() as c:
+            c.execute("UPDATE join_tokens SET used_at = 0 WHERE id = ?", (token_id,))
+
     def use_token(self, token_id: str) -> bool:
         """Mark a token used; False if it was already used (two joins racing for one token)."""
         with self.tx() as c:
