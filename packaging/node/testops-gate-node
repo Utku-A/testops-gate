@@ -5,13 +5,17 @@
 
     testops-gate-node join tgj1_...   (the command `testops-gate node add NAME` prints)
     testops-gate-node status
+    testops-gate-node dns-sync        (run every minute by testops-gate-node-dns.timer)
     testops-gate-node leave
 
 The private key is made here and never leaves this server: the VPN server only signs a certificate
 request. Before anything is sent, the join service is checked against the CA fingerprint in the
 join command. The connection runs as openvpn-client@testops-gate (starts at boot, reconnects).
-This server's own traffic and DNS are not changed; names in the VPN domain (e.g. *.internal)
-resolve through the VPN when systemd-resolved is used.
+
+This server's own traffic and DNS are not changed. The names the VPN resolves (other servers and
+the host records of the VPN server) are routed to the VPN's DNS: with systemd-resolved as routing
+domains of the tunnel; without it, as a managed block in /etc/hosts (wildcard names cannot be
+listed there). The list comes from the VPN's DNS and is refreshed every minute.
 
 Standard library only: this package must stay small on the servers it is installed on.
 """
@@ -23,7 +27,10 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import socket
 import ssl
+import struct
 import subprocess
 import sys
 import time
@@ -37,6 +44,14 @@ CLIENT_CONF = Path("/etc/openvpn/client/testops-gate.conf")
 UNIT = "openvpn-client@testops-gate.service"
 DEVICE = "tgnode"
 DNS_UP = "/usr/lib/testops-gate-node/dns-up"
+DNS_TIMER = "testops-gate-node-dns.timer"
+DNS_STATE = Path("/run/testops-gate-node/dns.json")
+HOSTS_FILE = Path("/etc/hosts")
+HOSTS_BEGIN = "# BEGIN testops-gate-node: names in the VPN (managed, do not edit)"
+HOSTS_END = "# END testops-gate-node"
+DNS_PORT = 53
+NAMES_LABEL = "_names._testops-gate"  # TXT records the VPN server answers to joined servers only
+LABEL_RE = re.compile(r"^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?$")
 TIMEOUT = 20
 
 
@@ -110,6 +125,168 @@ def request(url: str, context: ssl.SSLContext, body: dict | None = None) -> byte
                  "Update testops-gate on both servers and create a new join command.")
         fail(f"cannot reach the join service at {host}: {getattr(exc, 'reason', exc)}",
              f"Open {host.rsplit(':', 1)[-1]}/tcp to the VPN server in its cloud firewall while joining.")
+
+
+# --- DNS: the names the VPN resolves ------------------------------------------------------------
+
+
+def _recv(sock: socket.socket, size: int) -> bytes:
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise OSError("DNS connection closed")
+        data += chunk
+    return data
+
+
+def _skip_name(buf: bytes, pos: int) -> int:
+    while True:
+        length = buf[pos]
+        if length == 0:
+            return pos + 1
+        if length & 0xC0 == 0xC0:  # compression pointer
+            return pos + 2
+        pos += length + 1
+
+
+def dns_query(server: str, name: str, qtype: int, timeout: float = 5.0) -> list[bytes]:
+    """The rdata of the answers of type `qtype` (16 TXT, 1 A); [] for NXDOMAIN. DNS over TCP: no
+    truncation however long the list is."""
+    qname = b"".join(bytes([len(label)]) + label.encode() for label in name.strip(".").split(".")) + b"\0"
+    ident = int.from_bytes(os.urandom(2), "big")
+    message = struct.pack(">HHHHHH", ident, 0x0100, 1, 0, 0, 0) + qname + struct.pack(">HH", qtype, 1)
+    with socket.create_connection((server, DNS_PORT), timeout=timeout) as sock:
+        sock.sendall(struct.pack(">H", len(message)) + message)
+        reply = _recv(sock, struct.unpack(">H", _recv(sock, 2))[0])
+    rid, flags, questions, answers = struct.unpack(">HHHH", reply[:8])
+    if rid != ident:
+        raise OSError("unexpected DNS reply")
+    if flags & 0xF == 3:
+        return []
+    if flags & 0xF:
+        raise OSError(f"DNS error {flags & 0xF}")
+    pos = 12
+    for _ in range(questions):
+        pos = _skip_name(reply, pos) + 4
+    found = []
+    for _ in range(answers):
+        pos = _skip_name(reply, pos)
+        rtype, _, _, length = struct.unpack(">HHIH", reply[pos:pos + 10])
+        pos += 10
+        if rtype == qtype:
+            found.append(reply[pos:pos + length])
+        pos += length
+    return found
+
+
+def txt_strings(rdata: bytes) -> str:
+    out, pos = b"", 0
+    while pos < len(rdata):
+        out += rdata[pos + 1:pos + 1 + rdata[pos]]
+        pos += 1 + rdata[pos]
+    return out.decode("ascii", "replace")
+
+
+def vpn_settings() -> tuple[str, str]:
+    """The VPN's DNS server and domain, from the client configuration written at join."""
+    text = CLIENT_CONF.read_text()
+    dns = re.search(r"^setenv TG_DNS (\S+)", text, re.M)
+    domain = re.search(r"^setenv TG_DOMAIN (\S+)", text, re.M)
+    return (dns.group(1) if dns else ""), (domain.group(1) if domain else "internal")
+
+
+def valid_name(name: str) -> bool:
+    """A host name, or *.name for a wildcard: it ends up in resolvectl arguments and /etc/hosts."""
+    labels = name[2:].split(".") if name.startswith("*.") else name.split(".")
+    return 0 < len(name) <= 253 and all(LABEL_RE.match(label) for label in labels)
+
+
+def vpn_names(dns: str, domain: str) -> list[str]:
+    names = {txt_strings(r).strip().lower().rstrip(".") for r in dns_query(dns, f"{NAMES_LABEL}.{domain}", 16)}
+    return sorted(n for n in names if valid_name(n))
+
+
+def uses_resolved() -> bool:
+    """systemd-resolved runs and the system's lookups go through it."""
+    if not shutil.which("resolvectl"):
+        return False
+    if run("systemctl", "is-active", "systemd-resolved", check=False).stdout.strip() != "active":
+        return False
+    try:
+        resolv = Path("/etc/resolv.conf").read_text()
+    except OSError:
+        resolv = ""
+    try:
+        nsswitch = Path("/etc/nsswitch.conf").read_text()
+    except OSError:
+        nsswitch = ""
+    stub = re.search(r"^\s*nameserver\s+127\.0\.0\.5[34]\s*$", resolv, re.M)  # not a mention in a comment
+    return bool(stub or re.search(r"^hosts:[^#\n]*\bresolve\b", nsswitch, re.M))
+
+
+def hosts_block(lines: list[str]) -> None:
+    """Replace (or with no lines, remove) our block in /etc/hosts."""
+    try:
+        text = HOSTS_FILE.read_text()
+    except OSError:
+        return
+    kept = re.sub(rf"\n?{re.escape(HOSTS_BEGIN)}\n.*?{re.escape(HOSTS_END)}\n?", "\n", text, flags=re.S)
+    kept = kept.rstrip("\n") + "\n"
+    new = kept + (f"{HOSTS_BEGIN}\n" + "".join(f"{line}\n" for line in lines) + f"{HOSTS_END}\n" if lines else "")
+    if new == text:
+        return
+    tmp = HOSTS_FILE.with_name(".hosts.testops-gate-node")
+    tmp.write_text(new)
+    os.chmod(tmp, os.stat(HOSTS_FILE).st_mode & 0o777)
+    try:
+        os.replace(tmp, HOSTS_FILE)
+    except OSError:  # a bind-mounted /etc/hosts (containers) cannot be replaced, only rewritten
+        tmp.unlink()
+        HOSTS_FILE.write_text(new)
+
+
+def dns_sync() -> dict:
+    """Route the names the VPN resolves to the VPN's DNS; returns what was done."""
+    dns, domain = vpn_settings()
+    if not dns or "inet " not in run("ip", "-4", "addr", "show", "dev", DEVICE, check=False).stdout:
+        return {"mode": "down"}
+    names = vpn_names(dns, domain)
+    if uses_resolved():
+        hosts_block([])
+        run("resolvectl", "dns", DEVICE, dns, check=False)
+        routes = sorted({f"~{domain}"} | {f"~{n[2:] if n.startswith('*.') else n}" for n in names})
+        run("resolvectl", "domain", DEVICE, *routes, check=False)
+        result = {"mode": "resolved", "names": names}
+    else:
+        lines, skipped = [], []
+        for name in names:
+            if name.startswith("*."):
+                skipped.append(name)
+                continue
+            for rdata in dns_query(dns, name, 1):
+                lines.append(f"{socket.inet_ntoa(rdata)} {name}")
+        hosts_block(lines)
+        result = {"mode": "hosts", "names": names, "skipped": skipped}
+    previous = {}
+    try:
+        previous = json.loads(DNS_STATE.read_text())
+    except (OSError, ValueError):
+        pass
+    if previous != result:
+        DNS_STATE.parent.mkdir(parents=True, exist_ok=True)
+        DNS_STATE.write_text(json.dumps(result))
+        print(f"{len(names)} names in the VPN resolve here ({describe_dns(result)})")
+    return result
+
+
+def describe_dns(result: dict) -> str:
+    if result.get("mode") == "resolved":
+        return "systemd-resolved"
+    if result.get("mode") == "hosts":
+        skipped = result.get("skipped") or []
+        return "/etc/hosts" + (f"; wildcard names need systemd-resolved: {', '.join(skipped)}" if skipped else "")
+    return "the VPN connection is down"
 
 
 def write(path: Path, text: str, mode: int = 0o600) -> None:
@@ -202,6 +379,12 @@ def join(blob: str) -> int:
     else:
         fail("joined, but the VPN connection did not come up within 45 seconds",
              f"Check: journalctl -u {UNIT} -n 30")
+    run("systemctl", "enable", "--now", DNS_TIMER, check=False)
+    try:
+        result = dns_sync()
+        say(f"✓ DNS: {len(result.get('names', []))} names in the VPN resolve here ({describe_dns(result)})")
+    except OSError as exc:
+        say(f"! DNS: could not read the names in the VPN yet ({exc}); retried every minute")
     print()
     say(f"✓ {name} is in the VPN as {settings['vpn_ip']} ({settings['fqdn']})")
     say("Other servers and VPN users reach it by that name. The connection starts at boot.")
@@ -219,6 +402,11 @@ def status() -> int:
     up = bool(match)
     print(f"{node['name']} · {node['fqdn']} · {match.group(1) if match else node['vpn_ip']} via {node['remote']}")
     print(f"connection: {'up' if active and up else 'down'} ({UNIT}: {'active' if active else 'inactive'})")
+    try:
+        dns = json.loads(DNS_STATE.read_text())
+        print(f"dns: {len(dns.get('names', []))} names in the VPN resolve here ({describe_dns(dns)})")
+    except (OSError, ValueError):
+        print("dns: not synced yet (testops-gate-node dns-sync)")
     return 0 if active and up else 3
 
 
@@ -226,7 +414,9 @@ def leave() -> int:
     if os.geteuid() != 0:
         fail("run as root: sudo testops-gate-node leave")
     name = json.loads((CONF_DIR / "node.json").read_text())["name"] if (CONF_DIR / "node.json").exists() else "NAME"
-    run("systemctl", "disable", "--now", UNIT, check=False)
+    run("systemctl", "disable", "--now", DNS_TIMER, UNIT, check=False)
+    hosts_block([])
+    DNS_STATE.unlink(missing_ok=True)
     CLIENT_CONF.unlink(missing_ok=True)
     for path in CONF_DIR.glob("*"):
         path.unlink()
@@ -241,6 +431,17 @@ def main(argv: list[str]) -> int:
         return status()
     if argv[:1] == ["leave"]:
         return leave()
+    if argv[:1] == ["dns-clean"]:  # package removal: our /etc/hosts block goes too
+        hosts_block([])
+        return 0
+    if argv[:1] == ["dns-sync"]:
+        if not CLIENT_CONF.exists():
+            return 0
+        try:
+            dns_sync()
+        except OSError as exc:  # the VPN is reconnecting: the timer tries again
+            print(f"could not read the names in the VPN: {exc}", file=sys.stderr)
+        return 0
     if argv[:1] in (["add"], ["list"], ["remove"], ["edit"]):
         # easy to mix up with `testops-gate node ...`, which runs on the VPN server
         name = argv[1] if len(argv) > 1 else "NAME"

@@ -47,8 +47,11 @@ rm -rf "$NODE"
 mkdir -p "$NODE/DEBIAN" "$NODE/usr/bin" "$NODE/usr/lib/testops-gate-node" "$NODE/usr/share/doc/testops-gate-node"
 install -m 0755 /src/packaging/node/testops-gate-node "$NODE/usr/bin/"
 install -m 0755 /src/packaging/node/dns-up "$NODE/usr/lib/testops-gate-node/"
+mkdir -p "$NODE/lib/systemd/system"
+install -m 0644 /src/packaging/node/testops-gate-node-dns.service /src/packaging/node/testops-gate-node-dns.timer \
+    "$NODE/lib/systemd/system/"
 { cat /src/NOTICE; echo; echo "----"; echo; cat /src/LICENSE; } > "$NODE/usr/share/doc/testops-gate-node/copyright"
-for script in prerm postrm; do
+for script in postinst prerm postrm; do
     install -m 0755 "/src/packaging/debian-node/$script" "$NODE/DEBIAN/"
 done
 SIZE=$(du -sk "$NODE" | cut -f1)

@@ -21,7 +21,7 @@
 ## Features
 
 - **VPN users** — one command or one form per user; fixed VPN address, `.ovpn` profile, disable / renew / delete.
-- **Servers** — join a server to the VPN with one command (`testops-gate node add web-01`); servers reach each other by name.
+- **Servers** — join a server to the VPN with one command (`testops-gate node add web-01`); servers reach each other by name, and every host record resolves on them too (their own DNS is otherwise unchanged).
 - **Passwords** — username + password checked by the server (default), a password on the profile, or certificate only.
 - **Internal DNS** — map names to private addresses (`stage.internal → 10.0.5.20`, wildcards, CNAMEs).
 - **Split or full tunnel** — only your internal hosts over the VPN, or all traffic; globally or per user.

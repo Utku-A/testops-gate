@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    # Upgrade of a server that has joined: keep its list of VPN names up to date
+    if [ -f /etc/openvpn/client/testops-gate.conf ]; then
+        systemctl enable --now testops-gate-node-dns.timer >/dev/null 2>&1 || true
+        systemctl start --no-block testops-gate-node-dns.service >/dev/null 2>&1 || true
+    fi
+fi
+exit 0

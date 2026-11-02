@@ -1,0 +1,9 @@
+[Unit]
+Description=TestOps Gate node: route the names in the VPN to its DNS
+Documentation=https://github.com/Utku-A/testops-gate
+After=openvpn-client@testops-gate.service
+ConditionPathExists=/etc/openvpn/client/testops-gate.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/testops-gate-node dns-sync

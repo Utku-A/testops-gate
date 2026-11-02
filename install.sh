@@ -28,10 +28,12 @@ TG_ASSET="testops-gate_all.deb"
 TG_PACKAGE="testops-gate"
 TG_SUBTITLE="Private OpenVPN network"
 # `sh -s -- join tgj1_...`: this server joins an existing VPN (small package, no VPN server parts)
-if [ "${1:-}" = join ]; then
+# `sh -s -- node-update`: update that package on a server that has joined
+if [ "${1:-}" = join ] || [ "${1:-}" = node-update ]; then
     TG_ASSET="testops-gate-node_all.deb"
     TG_PACKAGE="testops-gate-node"
     TG_SUBTITLE="Join this server to a TestOps Gate VPN"
+    [ "$1" = join ] || TG_SUBTITLE="Update the TestOps Gate node on this server"
 fi
 
 # --- output ------------------------------------------------------------------
@@ -177,6 +179,12 @@ fi
 cmd() { printf '      %s%s%s\n' "$B" "$*" "$R"; }
 text() { printf '    %s\n' "$*"; }
 
+if [ "${1:-}" = node-update ]; then
+    printf '\n  %s✓ Updated to testops-gate-node %s.%s The VPN connection is kept.\n\n' "$GREEN" "$TG_AFTER" "$R"
+    testops-gate-node status | sed 's/^/    /' || true
+    printf '\n'
+    exit 0
+fi
 if [ "$TG_PACKAGE" = testops-gate-node ]; then
     [ -n "${2:-}" ] || fail "Join" "the join command is missing" "copy it from: sudo testops-gate node add NAME"
     printf '\n'

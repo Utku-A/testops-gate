@@ -3,6 +3,21 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.5.4 — 2026-11-03
+
+- Every host record now resolves on joined servers, not only names under `.internal`: a host
+  such as `app.example.com` or `*.preview.example.com` added in Hosts is answered by the VPN's
+  DNS there too, and removed within a minute when it is deleted. All other names still use the
+  server's own DNS. The list is published by the VPN's DNS to joined servers only (VPN users
+  cannot list it) and refreshed by `testops-gate-node-dns.timer` every minute
+  - with systemd-resolved the names become routing domains of the tunnel
+  - without it (most Debian servers) they are written to a marked block in `/etc/hosts`;
+    wildcard names need systemd-resolved. Before, nothing resolved without systemd-resolved
+  - `testops-gate-node status` shows how many names resolve and how
+- Update the package on a joined server, keeping its connection:
+  `curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- node-update`
+  (update the VPN server first)
+
 ## 0.5.3 — 2026-11-03
 
 - A server could not join when a service on the VPN server failed to reload during the join

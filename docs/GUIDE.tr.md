@@ -247,8 +247,15 @@ curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- join tgj1_…
 - Katılma servisi yalnızca bekleyen bir komut varken **8443/tcp** üzerinde dinler: katılma sırasında bulut güvenlik
   duvarında bu porta izin verin. İş bitince servis kendiliğinden durur.
 - Sunucular `web-01.internal` adıyla DNS'e girer. Sunucular birbirine, kullanıcılar sunuculara erişir; sunucular
-  kullanıcılara yeni bağlantı açamaz. Sunucunun kendi internet trafiği ve DNS'i değişmez (systemd-resolved varsa
-  yalnızca `*.internal` adları VPN üzerinden çözülür).
+  kullanıcılara yeni bağlantı açamaz. Sunucunun kendi internet trafiği değişmez.
+- **Adlar:** katılan sunucuda diğer sunucuların adları ve **Hostlar'da tanımlı her ad** (`.internal` dışındakiler ve
+  wildcard'lar dahil) VPN DNS'i üzerinden çözülür; diğer bütün adlar sunucunun kendi DNS'ine gitmeye devam eder.
+  Liste dakikada bir güncellenir (`testops-gate-node-dns.timer`): host ekleyip sildiğinizde bir dakika içinde
+  sunucularda da görünür/kaybolur. Liste yalnızca katılan sunuculara verilir, VPN kullanıcıları göremez.
+  - systemd-resolved kullanan sunucuda (Ubuntu) adlar tünel arayüzüne yönlendirme alanı olarak eklenir.
+  - systemd-resolved yoksa (çoğu Debian kurulumu) adlar `/etc/hosts` içinde işaretli bir bloğa yazılır. Wildcard
+    adlar `/etc/hosts`'a yazılamaz; onlar için `apt install systemd-resolved` kurun. `leave` bloğu kaldırır.
+  - Kontrol: `testops-gate-node status` kaç adın çözüldüğünü ve yöntemi gösterir; `getent hosts stage.internal`.
 - Bağlantı açılışta başlar, koparsa kendiliğinden yeniden bağlanır.
 - Komutu kopyalayamadıysanız ya da süresi dolduysa: Sunucular sayfasında satırı seçip `n` ile yeni komut oluşturun
   (eskisi geçersiz olur). `e` ile katılmış sunucunun VPN adresini ve notunu değiştirebilirsiniz; yeni adres hemen
@@ -266,6 +273,12 @@ sudo testops-gate node edit web-01 --rename web-02               # henüz katıl
 sudo testops-gate node remove web-01      # sertifikayı iptal eder
 sudo testops-gate-node status             # katılan sunucuda
 sudo testops-gate-node leave              # katılan sunucuda: VPN'den çık
+```
+
+Katılan sunucudaki paketi güncellemek (bağlantı korunur):
+
+```bash
+curl -fsSL https://testopscenter.com/install.sh | sudo sh -s -- node-update
 ```
 
 ## Tünel modu

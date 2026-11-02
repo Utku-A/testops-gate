@@ -64,7 +64,16 @@ def _fqdn(name: str) -> str:
     return name.rstrip(".") + "."
 
 
-def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = ()) -> str:
+NAMES_LABEL = "_names._testops-gate"
+
+
+def names_record(domain: str) -> str:
+    """The TXT record listing every name the VPN resolves (one TXT per name), for joined servers:
+    they route these names to the VPN's DNS (testops-gate-node dns-sync)."""
+    return f"{NAMES_LABEL}.{domain.strip('.')}"
+
+
+def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = (), domain: str = "internal") -> str:
     """nodes: (fqdn, vpn ip) of the servers in the VPN, e.g. ("web-01.internal", "10.8.0.50")."""
     lines = ["server:"]
     for name, ip in nodes:
@@ -87,4 +96,21 @@ def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = ()) -> str:
             lines.append(f'    local-data: "{owner} 300 IN CNAME {_fqdn(host.value)}"')
     if len(lines) == 1:
         lines.append("    # no host records")
+    lines += _names_view(hosts, nodes, domain)
     return HEADER + "\n".join(lines) + "\n"
+
+
+def _names_view(hosts: list[Host], nodes: list[tuple[str, str]], domain: str) -> list[str]:
+    """The list of names, answered only to joined servers (a view bound to their addresses):
+    VPN users get NXDOMAIN and cannot enumerate the host records."""
+    record = _fqdn(names_record(domain))
+    zone = record.split(".", 1)[1]  # _testops-gate.<domain>.
+    lines = [f'    local-zone: "{zone}" always_nxdomain  # the name list: joined servers only']
+    if not nodes:
+        return lines
+    lines += [f"    access-control-view: {ip}/32 testops-gate-nodes" for _, ip in nodes]
+    names = sorted({name for name, _ in nodes} | {h.name for h in hosts})
+    lines += ["", "view:", '    name: "testops-gate-nodes"', "    view-first: yes",
+              f'    local-zone: "{zone}" static']
+    lines += [f'    local-data: \'{record} 60 IN TXT "{name}"\'' for name in names]
+    return lines

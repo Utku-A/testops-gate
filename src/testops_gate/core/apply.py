@@ -94,7 +94,7 @@ def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
     if write_if_changed(P.unbound_conf, unbound.main_conf(cfg)):
         changed.add("unbound")
     node_names = [(f"{n.name}.{cfg.nodes.domain}", n.vpn_ip) for n in store.nodes() if n.enabled]
-    if write_if_changed(P.unbound_hosts_conf, unbound.hosts_conf(store.hosts(), node_names)):
+    if write_if_changed(P.unbound_hosts_conf, unbound.hosts_conf(store.hosts(), node_names, cfg.nodes.domain)):
         changed.add("hosts")
     if write_if_changed(P.nft_file, system.nftables(cfg, [n.vpn_ip for n in store.nodes()]), 0o640):
         changed.add("nftables")
