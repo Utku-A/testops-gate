@@ -141,7 +141,7 @@ if fetch "$TG_BASE/VERSION" "$TG_TMP/VERSION"; then
 fi
 fetch "$TG_BASE/$TG_ASSET" "$TG_TMP/$TG_ASSET" || download_failed "$TG_BASE/$TG_ASSET"
 fetch "$TG_BASE/SHA256SUMS" "$TG_TMP/SHA256SUMS" || download_failed "$TG_BASE/SHA256SUMS"
-TG_SIZE=$(wc -c <"$TG_TMP/$TG_ASSET" | LC_ALL=C awk '{ printf "%.1f MB", $1 / 1048576 }')
+TG_SIZE=$(wc -c <"$TG_TMP/$TG_ASSET" | LC_ALL=C awk '{ if ($1 < 1048576) printf "%d KB", ($1 + 1023) / 1024; else printf "%.1f MB", $1 / 1048576 }')
 ok "Download" "TestOps Gate ${TG_VERSION:-package} · $TG_SIZE"
 
 step "Checksum" "SHA-256"

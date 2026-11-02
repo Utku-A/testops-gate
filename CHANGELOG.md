@@ -3,6 +3,14 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.5.1 — 2026-11-02
+
+- Joining a server failed on systems with Python 3.13 or later (Debian 13, Ubuntu 25.04 and later) with
+  "Basic Constraints of CA cert not marked critical": newer Python rejects the CA certificate
+  that easy-rsa 3.0 (Debian 12, Ubuntu 22.04) creates. The join command still trusts only the
+  VPN server's CA, pinned by its fingerprint. TLS errors no longer suggest opening the firewall
+- The installer shows small downloads in KB instead of "0.0 MB"
+
 ## 0.5.0 — 2026-10-20
 
 - Servers in the VPN: `testops-gate node add web-01` (or Servers → `a` in the dashboard) prints a

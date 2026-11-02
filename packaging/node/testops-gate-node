@@ -74,6 +74,16 @@ def der_sha256(pem: str) -> str:
     return hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem[start:end])).hexdigest()
 
 
+def pinned_context(ca: str) -> ssl.SSLContext:
+    """TLS context that trusts only the pinned CA."""
+    context = ssl.create_default_context(cadata=ca)
+    context.check_hostname = False  # the CA is pinned; the address may be an IP or any name
+    # Python 3.13+ checks certificates strictly by default and rejects CAs made by easy-rsa 3.0
+    # (Debian 12, Ubuntu 22.04), whose basicConstraints is not marked critical
+    context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    return context
+
+
 def request(url: str, context: ssl.SSLContext, body: dict | None = None) -> bytes:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
@@ -88,6 +98,10 @@ def request(url: str, context: ssl.SSLContext, body: dict | None = None) -> byte
         fail(f"the VPN server refused: {reason}", "Create a new join command: sudo testops-gate node add NAME")
     except (urllib.error.URLError, OSError) as exc:
         host = url.split("/")[2]
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, ssl.SSLError):
+            fail(f"secure connection to the join service at {host} failed: {reason}",
+                 "Update testops-gate on both servers and create a new join command.")
         fail(f"cannot reach the join service at {host}: {getattr(exc, 'reason', exc)}",
              f"Open {host.rsplit(':', 1)[-1]}/tcp to the VPN server in its cloud firewall while joining.")
 
@@ -162,8 +176,7 @@ def join(blob: str) -> int:
     if der_sha256(ca) != info["ca_hash"]:
         fail("the join service's certificate does not match the join command",
              "Someone may be intercepting the connection, or the join command is from another VPN server.")
-    verified = ssl.create_default_context(cadata=ca)
-    verified.check_hostname = False  # the CA is pinned; the address may be an IP or any name
+    verified = pinned_context(ca)
     settings = json.loads(request(f"{base}/join", verified, {"token": info["token"], "csr": csr.read_text()}))
     csr.unlink()
     say(f"✓ Certificate issued · VPN address {settings['vpn_ip']}")
