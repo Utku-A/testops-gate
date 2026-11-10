@@ -128,6 +128,39 @@ class Paths:
     def unbound_hosts_conf(self) -> Path:
         return self._p("/etc/unbound/unbound.conf.d/testops-gate-hosts.conf")
 
+    # Web hosts: reverse proxy and its certificate authority
+    @property
+    def proxy_dir(self) -> Path:
+        return self.config_dir / "proxy"
+
+    @property
+    def proxy_cfg(self) -> Path:
+        return self.proxy_dir / "haproxy.cfg"
+
+    @property
+    def proxy_map(self) -> Path:
+        return self.proxy_dir / "hosts.map"
+
+    @property
+    def proxy_cert(self) -> Path:
+        return self.proxy_dir / "cert.pem"  # certificate + key, as HAProxy reads it
+
+    @property
+    def proxy_cert_info(self) -> Path:
+        return self.proxy_dir / "cert.json"
+
+    @property
+    def webca_dir(self) -> Path:
+        return self.config_dir / "webca"
+
+    @property
+    def webca_cert(self) -> Path:
+        return self.webca_dir / "ca.crt"
+
+    @property
+    def webca_key(self) -> Path:
+        return self.webca_dir / "ca.key"
+
     # System
     @property
     def sysctl_file(self) -> Path:

@@ -93,6 +93,17 @@ class NodesConfig:
 
 
 @dataclass
+class ProxyConfig:
+    """Web hosts (`host add dev.internal 127.0.0.1:4422`): HTTPS reverse proxy for VPN clients.
+
+    The proxy listens on these ports of the VPN address; ports 80 and 443 of that address are
+    redirected to them for traffic from the tunnel, so nothing else on the server is in the way.
+    """
+    http_port: int = 4480
+    https_port: int = 4443
+
+
+@dataclass
 class AuthConfig:
     mode: str = "user-password"
 
@@ -165,6 +176,7 @@ class Config:
     dns: DnsConfig = field(default_factory=DnsConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     nodes: NodesConfig = field(default_factory=NodesConfig)
+    proxy: ProxyConfig = field(default_factory=ProxyConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)

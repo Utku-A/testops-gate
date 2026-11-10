@@ -24,6 +24,7 @@
 - **Servers** — join a server to the VPN with one command (`testops-gate node add web-01`); servers reach each other by name, and every host record resolves on them too (their own DNS is otherwise unchanged).
 - **Passwords** — username + password checked by the server (default), a password on the profile, or certificate only.
 - **Internal DNS** — map names to private addresses (`stage.internal → 10.0.5.20`, wildcards, CNAMEs).
+- **Web hosts** — `https://dev.internal` for an application on any port (`→ 127.0.0.1:4422`), for VPN users only, with a certificate from the VPN's own CA.
 - **Split or full tunnel** — only your internal hosts over the VPN, or all traffic; globally or per user.
 - **Per-user logs** — sessions, DNS queries and connections in `/var/log/testops-gate/users/<user>/`, kept 14 days.
 - **Security monitoring** — port scans, blocked networks, forbidden ports, malicious domains, Suricata IDS, unusual upload volume, failed logins.
@@ -78,6 +79,8 @@ sudo testops-gate user export alice -o ~/            # copy the .ovpn to your ho
 sudo testops-gate user passwd alice                  # new password
 sudo testops-gate user send alice                    # email the profile (+ setup steps, never the password)
 sudo testops-gate host add stage.internal 10.0.5.20
+sudo testops-gate host add dev.internal 127.0.0.1:4422   # web host: https://dev.internal -> that port, VPN only
+sudo testops-gate ca                                 # the CA certificate users install once for web hosts
 sudo testops-gate node add web-01                    # prints a one-time join command for that server
 sudo testops-gate node edit web-01 --ip 10.8.0.50    # change a joined server's address (or --note, --rename)
 sudo testops-gate tunnel set full                    # or: split

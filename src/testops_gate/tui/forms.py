@@ -189,13 +189,17 @@ class HostForm(FormScreen):
             yield Label(T("Domain"), classes="field-label")
             yield Input(h.name if h else "", placeholder="stage.internal  ·  *.preview.internal", id="f-name")
             yield Label(T("Record type"), classes="field-label")
-            yield FormSelect([(T("A · IPv4 address"), "A"), (T("CNAME · another domain"), "CNAME")],
+            yield FormSelect([(T("A · IPv4 address"), "A"), (T("CNAME · another domain"), "CNAME"),
+                              (T("Web · HTTPS to IP:PORT"), "WEB")],
                              value=h.rtype if h else "A", allow_blank=False, id="f-type")
             yield Label(T("Target"), classes="field-label")
-            yield Input(h.value if h else "", placeholder="10.0.5.20", id="f-value")
+            yield Input(h.value if h else "", placeholder="10.0.5.20  ·  Web: 127.0.0.1:4422", id="f-value")
             yield Label(T("Note"), classes="field-label")
             yield Input(h.note if h else "", placeholder=T("Staging web server"), id="f-note")
             yield Label(T("In split mode a route to the target IP is pushed to clients automatically."), classes="hint")
+            yield Label(T("Web: https://NAME is forwarded to IP:PORT on this server's side (an application in "
+                          "Docker: 127.0.0.1:PORT). VPN clients only; the first one installs HAProxy."),
+                        classes="hint")
             yield Label("", id="f-error")
             yield self.buttons()
 
@@ -207,6 +211,48 @@ class HostForm(FormScreen):
             "note": self.query_one("#f-note", Input).value,
             "old_name": self.host.name if self.host else None,
         }
+
+
+class CaDialog(ModalScreen[None]):
+    """The web CA certificate: where it is and how VPN users install it."""
+
+    BINDINGS = [Binding("escape", "close", "Close")]
+
+    def __init__(self, path: str, fingerprint: str, domain: str, url: str) -> None:
+        super().__init__()
+        self._path, self._fingerprint, self._domain, self._url = path, fingerprint, domain, url
+
+    def compose(self) -> ComposeResult:
+        from testops_gate.core import webca
+
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="#8b949e", no_wrap=True)
+        grid.add_column()
+        grid.add_row(T("Certificate"), self._path)
+        half = len(self._fingerprint) // 2 + 1  # SHA-256 as AB:CD:...: two lines of 16 bytes
+        grid.add_row(T("Fingerprint"), Text(f"{self._fingerprint[:half]}\n{self._fingerprint[half:]}", style="#8b949e"))
+        if self._url:
+            grid.add_row(T("Download"), Text(self._url, style="bold #3fb950"))
+        with Vertical(classes="dialog wide") as dialog:
+            dialog.border_title = T("Web CA certificate")
+            yield Label(T("Web hosts use HTTPS with a certificate from this VPN's own authority. Devices trust it "
+                          "after its certificate is installed, once per device; it is valid only for names under "
+                          ".{domain}.", domain=self._domain), classes="hint")
+            yield Static(grid, id="ca-details")
+            yield Label(T("VPN users open the download address while connected, or you send them the file "
+                          "(sudo testops-gate ca -o ~/). Then:"), classes="hint")
+            yield Static("\n".join(f"• {line}" for line in webca.install_steps()), id="ca-steps", classes="hint")
+            with Horizontal(classes="dialog-buttons"):
+                yield Button(T("Close"), variant="primary", id="close")
+
+    def on_mount(self) -> None:
+        self.query_one("#close", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
 
 class ChannelForm(FormScreen):

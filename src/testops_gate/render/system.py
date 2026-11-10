@@ -16,7 +16,8 @@ def _elements(values: list[str]) -> str:
     return f" elements = {{ {', '.join(values)} }};" if values else ""
 
 
-def nftables(cfg: Config, node_ips: list[str] = ()) -> str:
+def nftables(cfg: Config, node_ips: list[str] = (), web: bool = False) -> str:
+    """web: there are web hosts, so ports 80/443 of the VPN address go to the reverse proxy."""
     sec = cfg.security
     unauth = sec.category_enabled("unauth") and sec.blocked_networks
     ports = sec.category_enabled("ports") and sec.forbidden_ports
@@ -89,6 +90,16 @@ def nftables(cfg: Config, node_ips: list[str] = ()) -> str:
             "    }",
             "",
         ] if enforce else []),
+        *([
+            "    # Web hosts: 80/443 of the VPN address reach the reverse proxy, for VPN clients only.",
+            "    # Before other NAT rules (Docker's published ports), which would take these ports.",
+            "    chain web_redirect {",
+            "        type nat hook prerouting priority -105; policy accept;",
+            f'        iifname "{TUN_DEVICE}" ip daddr {dns} tcp dport 80 redirect to :{cfg.proxy.http_port}',
+            f'        iifname "{TUN_DEVICE}" ip daddr {dns} tcp dport 443 redirect to :{cfg.proxy.https_port}',
+            "    }",
+            "",
+        ] if web else []),
         "    chain postrouting {",
         "        type nat hook postrouting priority srcnat; policy accept;",
     ]

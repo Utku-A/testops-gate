@@ -17,6 +17,7 @@ from datetime import date
 from typing import Any
 
 from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -25,9 +26,11 @@ from textual.widgets import ContentSwitcher, Footer, Label, ListItem, ListView
 
 from testops_gate import BRAND
 from testops_gate import config as config_mod
+from testops_gate.core.apply import ServiceError
 from testops_gate.core.context import Context, ValidationError
 from testops_gate.db import Alert, Host, LiveClient, User
 from testops_gate.i18n import T, current_language, set_language
+from testops_gate.paths import P
 from testops_gate.system import netinfo, services
 from testops_gate.tui.pages import (
     DashboardPage,
@@ -54,6 +57,8 @@ NAV = [
 ]
 TICK = 2.0
 SERVICES_EVERY = 3  # ticks
+# keys the menu itself uses, or that change something without asking (space: enable/disable)
+MENU_KEYS = {"up", "down", "left", "right", "enter", "space", "escape", "tab", "shift+tab"}
 THROUGHPUT_SAMPLES = 60
 
 
@@ -229,13 +234,13 @@ class GateApp(App):
     # --- data ----------------------------------------------------------------
 
     def config_mtime(self) -> float:
-        from testops_gate.paths import P
-
         paths = (P.config_file, P.secrets_file)
         return max((p.stat().st_mtime for p in paths if p.exists()), default=0.0)
 
     def units(self) -> list[str]:
         units = list(services.CORE_UNITS)
+        if P.proxy_cfg.exists():
+            units.append(services.PROXY_UNIT)
         if self.ctx.cfg.security.category_enabled("ids"):
             units.append(services.SURICATA_UNIT)
         return units
@@ -299,6 +304,10 @@ class GateApp(App):
         """
         try:
             result = await self.run_in_thread(fn, *args, **kwargs)
+        except ServiceError as exc:
+            # The change is saved; only a service did not take it: done, with the reason
+            self.notify(str(exc), title=T("✗ Service problem"), severity="error", timeout=20)
+            return True
         except (ValidationError, RuntimeError, OSError) as exc:  # RuntimeError includes CommandError
             self.notify(str(exc), title=T("✗ Failed"), severity="error", timeout=8)
             return None
@@ -334,6 +343,24 @@ class GateApp(App):
         if event.list_view.id == "nav" and event.item and event.item.id:
             self.page = event.item.id.removeprefix("nav-")
             self.query_one("#content", ContentSwitcher).current = self.page
+
+    async def on_key(self, event: events.Key) -> None:
+        """A page's keys (a: add, x: delete, ...) also work while the menu is focused: the page is
+        on screen, so the key enters it and acts on its selected row."""
+        if event.key in MENU_KEYS or self.ctx is None or len(self.screen_stack) > 1:
+            return
+        try:
+            if self.focused is not self.query_one("#nav"):
+                return
+            page = self.current_page()
+        except NoMatches:
+            return
+        for binding in type(page).BINDINGS:
+            if binding.show and event.key in binding.key.split(","):
+                event.stop()
+                page.focus_default()
+                await page.run_action(binding.action)
+                return
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.list_view.id == "nav":

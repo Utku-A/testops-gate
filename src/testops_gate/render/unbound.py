@@ -73,8 +73,10 @@ def names_record(domain: str) -> str:
     return f"{NAMES_LABEL}.{domain.strip('.')}"
 
 
-def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = (), domain: str = "internal") -> str:
-    """nodes: (fqdn, vpn ip) of the servers in the VPN, e.g. ("web-01.internal", "10.8.0.50")."""
+def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = (), domain: str = "internal",
+               proxy_ip: str = "") -> str:
+    """nodes: (fqdn, vpn ip) of the servers in the VPN, e.g. ("web-01.internal", "10.8.0.50").
+    proxy_ip: where web hosts resolve to (the reverse proxy on the VPN address)."""
     lines = ["server:"]
     for name, ip in nodes:
         owner = _fqdn(name)
@@ -90,7 +92,9 @@ def hosts_conf(hosts: list[Host], nodes: list[tuple[str, str]] = (), domain: str
             # transparent: other names resolve normally; other types of this name get NODATA
             owner = _fqdn(host.name)
             lines.append(f'    local-zone: "{owner}" transparent')
-        if host.rtype == "A":
+        if host.web:
+            lines.append(f'    local-data: "{owner} 300 IN A {proxy_ip}"')
+        elif host.rtype == "A":
             lines.append(f'    local-data: "{owner} 300 IN A {host.value}"')
         else:
             lines.append(f'    local-data: "{owner} 300 IN CNAME {_fqdn(host.value)}"')

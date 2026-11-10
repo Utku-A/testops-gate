@@ -16,9 +16,10 @@ import os
 from pathlib import Path
 
 from testops_gate.config import Config
+from testops_gate.core import webca
 from testops_gate.db import Store
 from testops_gate.paths import P
-from testops_gate.render import openvpn, system, unbound
+from testops_gate.render import openvpn, proxy, system, unbound
 from testops_gate.system import nft, services
 from testops_gate.system.runner import CommandError, run
 
@@ -82,6 +83,20 @@ def write_auth(cfg: Config, store: Store) -> bool:
     return changed
 
 
+def write_proxy(cfg: Config, web: list) -> bool:
+    """Reverse proxy for web hosts: its certificate, host map and configuration; all removed (the
+    CA is kept: devices trust it) when the last web host goes."""
+    if not web:
+        existed = P.proxy_cfg.exists()
+        for path in (P.proxy_cfg, P.proxy_map, P.proxy_cert, P.proxy_cert_info):
+            path.unlink(missing_ok=True)
+        return existed
+    changed = webca.sync(cfg, [h.name for h in web])
+    changed |= write_if_changed(P.proxy_map, proxy.hosts_map(web), 0o640)
+    changed |= write_if_changed(P.proxy_cfg, proxy.haproxy_cfg(cfg, web), 0o640)
+    return changed
+
+
 def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
     """Regenerate all files; returns the names of the parts that changed."""
     changed: set[str] = set()
@@ -94,10 +109,15 @@ def apply_all(cfg: Config, store: Store, *, reload: bool = True) -> set[str]:
     if write_if_changed(P.unbound_conf, unbound.main_conf(cfg)):
         changed.add("unbound")
     node_names = [(f"{n.name}.{cfg.nodes.domain}", n.vpn_ip) for n in store.nodes() if n.enabled]
-    if write_if_changed(P.unbound_hosts_conf, unbound.hosts_conf(store.hosts(), node_names, cfg.nodes.domain)):
+    hosts = store.hosts()
+    web = [h for h in hosts if h.web]
+    if write_if_changed(P.unbound_hosts_conf,
+                        unbound.hosts_conf(hosts, node_names, cfg.nodes.domain, openvpn.server_ip(cfg))):
         changed.add("hosts")
-    if write_if_changed(P.nft_file, system.nftables(cfg, [n.vpn_ip for n in store.nodes()]), 0o640):
+    if write_if_changed(P.nft_file, system.nftables(cfg, [n.vpn_ip for n in store.nodes()], bool(web)), 0o640):
         changed.add("nftables")
+    if write_proxy(cfg, web):
+        changed.add("proxy" if web else "proxy-off")
     if write_if_changed(P.sysctl_file, system.sysctl()):
         changed.add("sysctl")
 
@@ -144,6 +164,14 @@ def reload_changed(changed: set[str]) -> None:
         attempt("unbound", services.UNBOUND_UNIT, lambda: _reload_or_restart(services.UNBOUND_UNIT))
     if "openvpn" in changed:
         attempt("openvpn", services.OPENVPN_UNIT, lambda: services.restart(services.OPENVPN_UNIT))
+    if "proxy" in changed:
+        def start_proxy() -> None:
+            services.systemctl("enable", services.PROXY_UNIT, check=False)
+            _reload_or_restart(services.PROXY_UNIT)
+
+        attempt("web hosts", services.PROXY_UNIT, start_proxy)
+    if "proxy-off" in changed:
+        services.disable_now(services.PROXY_UNIT)
     if "suricata-on" in changed:
         services.daemon_reload()
         services.systemctl("enable", services.SURICATA_UNIT, check=False)

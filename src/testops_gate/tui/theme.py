@@ -147,7 +147,7 @@ Shell { height: 1fr; }
 
 /* Dialogs */
 ConfirmDialog, UserForm, HostForm, ChannelForm, ListForm, ExportForm, PasswordForm, AccessDialog, HelpScreen,
-UninstallDialog, RepairDialog, NodeForm, JoinDialog { align: center middle; }
+UninstallDialog, RepairDialog, NodeForm, JoinDialog, CaDialog { align: center middle; }
 #r-log { height: 10; border: round $border-blurred; margin-top: 1; }
 .settings-panel.danger { border: round $error 60%; }
 .settings-panel.danger:focus-within { border: round $error; }

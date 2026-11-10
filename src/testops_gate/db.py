@@ -167,13 +167,24 @@ class JoinToken:
 @dataclass
 class Host:
     name: str
-    rtype: str  # A | CNAME
+    rtype: str  # A | CNAME | WEB (HTTPS reverse proxy: value is "ip:port" or "https://ip:port")
     value: str
     note: str = ""
 
     @property
     def wildcard(self) -> bool:
         return self.name.startswith("*.")
+
+    @property
+    def web(self) -> bool:
+        return self.rtype == "WEB"
+
+    @property
+    def target(self) -> tuple[str, str, int]:
+        """A web host's target as (scheme, ip, port)."""
+        scheme, _, rest = self.value.rpartition("://")
+        ip, _, port = rest.rpartition(":")
+        return scheme or "http", ip, int(port)
 
 
 @dataclass

@@ -420,6 +420,46 @@ def cmd_enroll_serve(args: argparse.Namespace) -> int:
 # --- hosts ----------------------------------------------------------------------
 
 
+def print_web_hint(host) -> None:
+    print(T("VPN users open https://{name}", name=host.name))
+    print(T("Their devices trust it once the web CA certificate is installed (once per device): "
+            "sudo testops-gate ca"))
+
+
+def cmd_ca(args: argparse.Namespace) -> int:
+    """The web CA: the certificate VPN users install so that web hosts are trusted."""
+    import shutil
+    from pathlib import Path
+
+    from testops_gate.core import webca
+    from testops_gate.paths import P
+
+    ctx = open_context()
+    webca.ensure_ca(ctx.cfg)
+    if args.output:
+        target = Path(args.output).expanduser()
+        if target.is_dir():
+            target = target / "testops-gate-ca.crt"
+        shutil.copyfile(P.webca_cert, target)
+        os.chmod(target, 0o644)
+        print(T("Web CA certificate written to {path}", path=target))
+        return 0
+    web = [h for h in ctx.store.hosts() if h.web]
+    print(T("Web CA certificate: {path}", path=P.webca_cert))
+    print(T("SHA-256 fingerprint: {fingerprint}", fingerprint=webca.fingerprint()))
+    print(T("Trusted only for names under .{domain}", domain=ctx.cfg.nodes.domain))
+    print()
+    if web:
+        print(T("VPN users download it while connected: http://{name}/ca.crt", name=web[0].name))
+    print(T("Copy it out: sudo testops-gate ca -o ~/   (then scp, or send it by email)"))
+    print()
+    print(T("Install it once per device:"))
+    for line in webca.install_steps():
+        print(f"  {line}")
+    return 0
+
+
+
 def cmd_host(args: argparse.Namespace) -> int:
     ctx = open_context()
     action = args.host_action
@@ -427,15 +467,23 @@ def cmd_host(args: argparse.Namespace) -> int:
         print(table([T("Domain"), T("Type"), T("Target"), T("Note")],
                     [[h.name, h.rtype, h.value, h.note or "—"] for h in ctx.store.hosts()]))
     elif action == "add":
-        host = ctx.save_host(args.name, args.type, args.target, args.note or "")
+        # a target with a port is a web host: https://NAME is forwarded to it
+        rtype = args.type or ("WEB" if ":" in args.target else "A")
+        host = ctx.save_host(args.name, rtype, args.target, args.note or "")
         print(T("{name} -> {value} added", name=host.name, value=host.value))
+        if host.web:
+            print_web_hint(host)
     elif action == "edit":
         current = ctx.store.host(args.name.lower())
         if not current:
             raise ValidationError(T("No such host: {name}", name=args.name))
-        host = ctx.save_host(args.rename or current.name, args.type or current.rtype, args.target or current.value,
+        target = args.target or current.value
+        rtype = args.type or ("WEB" if args.target and ":" in args.target else current.rtype)
+        host = ctx.save_host(args.rename or current.name, rtype, target,
                              current.note if args.note is None else args.note, old_name=current.name)
         print(T("{name} updated", name=host.name))
+        if host.web:
+            print_web_hint(host)
     elif action == "delete":
         ctx.delete_host(args.name.lower())
         print(T("{name} deleted", name=args.name))
@@ -778,16 +826,19 @@ def build_parser() -> argparse.ArgumentParser:
     hs.add_parser("list")
     a = hs.add_parser("add")
     a.add_argument("name", help="e.g. stage.internal or *.preview.internal")
-    a.add_argument("target", help="IPv4 address (A) or domain (CNAME)")
-    a.add_argument("--type", choices=["A", "CNAME"], default="A")
+    a.add_argument("target", help="IPv4 address (A), domain (CNAME) or IP:PORT (web host: https://NAME goes there)")
+    a.add_argument("--type", choices=["A", "CNAME", "WEB"], help="default: WEB when the target has a port, else A")
     a.add_argument("--note")
     a = hs.add_parser("edit")
     a.add_argument("name")
     a.add_argument("--rename")
     a.add_argument("--target")
-    a.add_argument("--type", choices=["A", "CNAME"])
+    a.add_argument("--type", choices=["A", "CNAME", "WEB"])
     a.add_argument("--note")
     hs.add_parser("delete").add_argument("name")
+
+    p = sub.add_parser("ca", help="web CA certificate: install it on devices so https://NAME.internal is trusted")
+    p.add_argument("-o", "--output", help="copy the certificate to this file or directory")
 
     p = sub.add_parser("tunnel", help="tunnel mode (split / full)")
     ts = p.add_subparsers(dest="tunnel_action")
@@ -861,7 +912,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "install": cmd_install, "uninstall": cmd_uninstall, "status": cmd_status, "doctor": cmd_doctor, "repair": cmd_repair, "apply": cmd_apply, "update": cmd_update, "user": cmd_user, "node": cmd_node, "enroll-serve": cmd_enroll_serve,
-    "host": cmd_host, "tunnel": cmd_tunnel, "settings": cmd_settings, "security": cmd_security,
+    "host": cmd_host, "ca": cmd_ca, "tunnel": cmd_tunnel, "settings": cmd_settings, "security": cmd_security,
     "alerts": cmd_alerts, "notify": cmd_notify, "logs": cmd_logs,
 }
 

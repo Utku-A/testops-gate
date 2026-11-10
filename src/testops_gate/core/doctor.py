@@ -33,6 +33,7 @@ OWNER_RE = re.compile(r'\("([^"]+)",pid=(\d+)')
 SERVICE_NAMES = {
     services.OPENVPN_UNIT: "openvpn",
     services.UNBOUND_UNIT: "unbound",
+    services.PROXY_UNIT: "web hosts",
     services.FIREWALL_UNIT: "firewall",
     services.DAEMON_UNIT: "testops-gated",
     services.SURICATA_UNIT: "suricata",
@@ -49,6 +50,8 @@ class Finding:
 
 def units(cfg: Config) -> list[str]:
     result = list(services.CORE_UNITS)
+    if P.proxy_cfg.exists():
+        result.append(services.PROXY_UNIT)
     if cfg.security.category_enabled("ids") and services.package_installed("suricata"):
         result.append(services.SURICATA_UNIT)
     return result

@@ -399,13 +399,50 @@ class Context:
             if not is_hostname(value.lower()):
                 raise ValidationError(T("Enter a valid domain as the CNAME target"))
             value = value.lower()
+        elif rtype == "WEB":
+            value = self._web_target(name, value)
+            self.ensure_proxy_installed()
         else:
-            raise ValidationError(T("Record type must be A or CNAME"))
+            raise ValidationError(T("Record type must be A, CNAME or WEB"))
         host = Host(name, rtype, value, note.strip())
         self.store.upsert_host(host, old_name=old_name)
         self.apply()
         logs.audit("host.edit" if old_name else "host.add", f"{name} {rtype} {value}")
         return host
+
+    def _web_target(self, name: str, value: str) -> str:
+        """A web host forwards https://NAME to IP:PORT on the server's side; returns the target as
+        "ip:port", or "https://ip:port" when the target itself speaks HTTPS."""
+        domain = self.cfg.nodes.domain
+        if name.startswith("*.") or not name.endswith(f".{domain}"):
+            # the web CA is only trusted for this domain (name constraints), and it signs no wildcards
+            raise ValidationError(T("A web host must be a name under .{domain} (e.g. dev.{domain})", domain=domain))
+        scheme, _, rest = value.lower().rpartition("://")
+        ip, _, port = rest.rstrip("/").rpartition(":")
+        try:
+            if scheme not in ("", "http", "https"):
+                raise ValueError
+            ipaddress.IPv4Address(ip)
+            if not 1 <= int(port) <= 65535:
+                raise ValueError
+        except ValueError:
+            raise ValidationError(T("Enter the target as IP:PORT (e.g. 127.0.0.1:4422); "
+                                    "https://IP:PORT if the target itself uses HTTPS")) from None
+        if ip == openvpn.server_ip(self.cfg) and int(port) in (80, 443, self.cfg.proxy.http_port, self.cfg.proxy.https_port):
+            raise ValidationError(T("That is the web host proxy itself; enter the port the application listens on"))
+        return f"{'https://' if scheme == 'https' else ''}{ip}:{int(port)}"
+
+    def ensure_proxy_installed(self) -> None:
+        """Install HAProxy with the first web host. Its own service is left off: web hosts run in
+        a separate instance (testops-gate-proxy.service)."""
+        if not self.reload or services.package_installed("haproxy"):
+            return
+        services.apt_update()
+        new = services.apt_install(["haproxy"])
+        self.cfg.installed_packages = sorted(set(self.cfg.installed_packages) | set(new))
+        services.systemctl("disable", "--now", "haproxy.service", check=False)
+        self.save()
+        logs.audit("proxy.install", "haproxy installed")
 
     def delete_host(self, name: str) -> None:
         if not self.store.host(name):

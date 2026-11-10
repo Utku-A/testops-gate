@@ -309,6 +309,47 @@ VPN kullanıcıları `stage.internal` adresine gittiğinde Unbound `10.0.5.20` d
 
 <p align="center"><img src="assets/screenshots/tr/hosts.png" width="900" alt="Hostlar: iç DNS kayıtları, wildcard dahil"></p>
 
+### Web host'lar: alan adını bir porta yönlendirme (HTTPS)
+
+DNS kaydı port taşıyamaz. Sunucuda farklı portlarda çalışan uygulamalara (ör. Docker'daki projeler) port yazmadan,
+alan adıyla ve HTTPS ile erişmek için **web host** tanımlayın:
+
+```bash
+sudo testops-gate host add dev.sirket.internal 127.0.0.1:4422      # hedefte port varsa web host olur
+sudo testops-gate host add stage.sirket.internal 127.0.0.1:4423
+sudo testops-gate host add eski.sirket.internal https://10.0.5.20:8443   # hedefin kendisi HTTPS ise
+```
+
+Dashboard'da: Hostlar → `a` → Kayıt tipi **Web**. VPN kullanıcıları `https://dev.sirket.internal` adresini açar.
+
+- **Nasıl çalışır:** ad, VPN sunucusunun VPN adresine (`10.8.0.1`) çözülür. Orada bir ters vekil (HAProxy, ilk web
+  host eklenince kurulur) isteği alan adına göre `IP:PORT`'a iletir. `http://` istekleri `https://`'e yönlenir;
+  WebSocket çalışır. Hedef, sunucunun kendisi (`127.0.0.1:PORT`), katılmış bir sunucu ya da iç ağdaki bir makine
+  olabilir.
+- **Yalnızca VPN:** vekil yalnızca VPN adresinde dinler ve yalnızca tünelden gelen trafik ona ulaşır; internetten
+  erişilemez. Sunucuda 80/443'ü kullanan başka bir program (nginx, Docker) varsa çakışmaz. Katılmış sunucular da bu
+  adlara erişir.
+- **Uygulamanın kendisini de kapatın:** Docker'da `-p 4422:4422` portu internete de açar. Yalnızca VPN'den erişilsin
+  istiyorsanız `-p 127.0.0.1:4422:4422` kullanın.
+- **Sertifika:** `.internal` gibi özel adlara hiçbir genel sertifika yetkilisi sertifika vermez. Bu yüzden VPN'in
+  kendi **web CA**'sı vardır; bütün web host'lar için tek sertifika üretilir ve süresi dolmadan kendiliğinden
+  yenilenir. Cihazlar, **CA sertifikası bir kez kurulduktan sonra** uyarı göstermez (cihaz başına bir kez; sonradan
+  eklenen web host'lar için tekrar gerekmez):
+
+  ```bash
+  sudo testops-gate ca            # dosyanın yeri, parmak izi, kurulum adımları (dashboard: Hostlar → c)
+  sudo testops-gate ca -o ~/      # dosyayı kopyala; kullanıcılara gönderin
+  ```
+
+  VPN'e bağlı kullanıcı dosyayı kendisi de indirebilir: `http://dev.sirket.internal/ca.crt`.
+  Windows: çift tıklayın → Sertifika Yükle → Yerel Makine → Güvenilen Kök Sertifika Yetkilileri. macOS: Anahtar
+  Zinciri'nde açın → Güven → Her Zaman Güven. Linux: `/usr/local/share/ca-certificates/` altına kopyalayıp
+  `sudo update-ca-certificates`. Firefox kendi listesini kullanır (Ayarlar → Sertifikalar → Yetkililer → İçe Aktar).
+- **Bu CA'ya güvenmek güvenli mi:** web CA, OpenVPN CA'sından ayrıdır ve yalnızca `.internal` altındaki adlar için
+  geçerlidir (X.509 ad kısıtı). Anahtarı ele geçirilse bile başka bir site (banka, e-posta) için sertifika
+  üretilemez; cihazlar reddeder. Bu yüzden web host adları `.internal` altında olmalıdır, wildcard desteklenmez.
+- Son web host silinince vekil durur; CA korunur (cihazlar ona güvenmeye devam eder).
+
 ### VPN DNS'ini zorlama
 
 Varsayılan olarak açık (`testops-gate settings dns-enforce on|off`, Ayarlar → DNS). Kullanıcı cihazında başka bir DNS ayarlasa da host kayıtları, DNS logları ve zararlı alan adı engeli çalışmaya devam eder:
@@ -395,6 +436,7 @@ testops-gate                         TUI (kurulu değilse kurulum sihirbazı)
 testops-gate install | update [--check] | uninstall [--keep-data] [--keep-packages] | status
 testops-gate user     list | add | edit | disable | enable | delete | renew | export
 testops-gate host     list | add | edit | delete
+testops-gate ca       [-o DOSYA]          # web host'ların CA sertifikası
 testops-gate tunnel   show | set split|full | routes [CIDR…]
 testops-gate settings show | language en|tr | port N [--protocol udp|tcp] | endpoint ADRES | auth MOD | retention DAYS | dns UPSTREAM | dns-enforce on|off | update-check on|off | update-url URL|default
 testops-gate security status | enable [CAT…] | disable [CAT…] | block-networks | forbidden-ports | rpz-url

@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 from testops_gate import __version__, logs
 from testops_gate import config as config_mod
-from testops_gate.core import nodes
+from testops_gate.core import nodes, webca
 from testops_gate.core.apply import write_ccd
 from testops_gate.core.context import Context
 from testops_gate.daemon import parsers
@@ -443,6 +443,9 @@ class Daemon:
         if now - self.last_crl_check >= 86400:
             self.last_crl_check = now
             self.check_crl()
+            if webca.expiring(now):  # the web hosts' certificate: apply issues a new one
+                self.ctx.apply()
+                logs.audit("proxy.cert", "web host certificate renewed", actor="testops-gated")
 
     def check_crl(self) -> None:
         next_update = crl_next_update(P.openvpn_dir / "crl.pem")

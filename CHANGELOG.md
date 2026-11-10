@@ -3,6 +3,34 @@
 Each version's section is published as its release notes on testopscenter.com/releases
 and on GitHub. Add a `## X.Y.Z — YYYY-MM-DD` section before tagging a release.
 
+## 0.6.0 — 2026-11-11
+
+- Web hosts: give an application on any port a name and HTTPS, for VPN users only.
+
+      sudo testops-gate host add dev.internal 127.0.0.1:4422
+
+  (or Hosts → `a` → type Web). VPN users open `https://dev.internal`
+  - the name resolves to the VPN address, where a reverse proxy (HAProxy, installed with the
+    first web host) forwards by name to the target: an application on the server itself (for
+    example a container published on 127.0.0.1), a joined server or a machine in the internal
+    network. `http://` redirects to `https://`; WebSocket works
+  - only traffic from the tunnel reaches it; it is not reachable from the internet and does not
+    need ports 80/443 of the server, so nginx or Docker using them is not in the way
+  - certificates come from the VPN's own web CA, since no public CA issues them for private
+    names: one certificate covers every web host and is renewed before it expires. Devices
+    trust it after the CA certificate is installed once per device: `sudo testops-gate ca`
+    (Hosts → `c`) shows the file, its fingerprint and the steps; VPN users can download it from
+    `http://<web host>/ca.crt`
+  - the web CA is separate from the OpenVPN CA and constrained to the VPN domain (`.internal`):
+    a device that trusts it does not trust it for any other site. Web hosts therefore have to
+    be names under `.internal`
+- A page's keys (`a` add, `e` edit, `x` delete, …) now also work while the menu is focused: move
+  to Hosts with the arrows and press `a`, without entering the page first. Before, the keys did
+  nothing until the page was entered with Enter or its number
+- Deleting a host (or another record) when a service then failed to reload was reported as
+  "Failed" and the row stayed in the table for a moment, although the record was deleted. It is
+  now reported as a service problem and the table is updated at once
+
 ## 0.5.4 — 2026-11-03
 
 - Every host record now resolves on joined servers, not only names under `.internal`: a host

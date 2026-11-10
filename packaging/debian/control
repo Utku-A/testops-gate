@@ -7,7 +7,7 @@ Maintainer: @MAINTAINER@
 Installed-Size: @SIZE@
 Homepage: https://testopscenter.com
 Depends: python3 (>= 3.10), python3-yaml, openvpn (>= 2.5), easy-rsa, unbound, nftables, conntrack, openssl, iproute2, ca-certificates, systemd
-Suggests: suricata, suricata-update
+Suggests: suricata, suricata-update, haproxy
 Description: TestOps Gate - OpenVPN private network with a terminal dashboard
  TestOps Gate sets up an OpenVPN server and manages it from a terminal
  dashboard (`testops-gate`) or the command line:

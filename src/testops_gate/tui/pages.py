@@ -41,6 +41,7 @@ from testops_gate.render.openvpn import effective_mode, server_ip
 from testops_gate.system import dnsquery, services
 from testops_gate.tui.forms import (
     AccessDialog,
+    CaDialog,
     ChannelForm,
     ExportForm,
     HostForm,
@@ -64,6 +65,7 @@ SERVICE_NAMES = {
     services.OPENVPN_UNIT: "openvpn",
     services.UNBOUND_UNIT: "unbound",
     services.FIREWALL_UNIT: "firewall",
+    services.PROXY_UNIT: "web hosts",
     services.DAEMON_UNIT: "testops-gated",
     services.SURICATA_UNIT: "suricata",
 }
@@ -196,6 +198,7 @@ class DashboardPage(Page):
                                       proto=cfg.server.protocol, port=cfg.server.port)),
             services.UNBOUND_UNIT: T("{n} host records", n=len(snap.hosts)),
             services.FIREWALL_UNIT: "nftables",
+            services.PROXY_UNIT: T("{n} web hosts · HTTPS", n=sum(1 for h in snap.hosts if h.web)),
             services.DAEMON_UNIT: T("log collector · security"),
             services.SURICATA_UNIT: "IDS · ET Open",
         }
@@ -623,6 +626,7 @@ class HostsPage(Page):
         Binding("e", "edit", "Edit"),
         Binding("x,delete", "delete", "Delete"),
         Binding("t", "test", "DNS test"),
+        Binding("c", "ca", "CA certificate"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -640,8 +644,9 @@ class HostsPage(Page):
         cursor = table.cursor_row
         table.clear()
         for h in hosts:
-            table.add_row(Text(h.name, "bold"), Text(h.rtype, "#39c5cf"), h.value, Text(h.note or "—", "dim"),
-                          key=h.name)
+            target = Text.assemble(("https → ", "dim"), h.value) if h.web else h.value
+            table.add_row(Text(h.name, "bold"), Text(h.rtype, GREEN if h.web else "#39c5cf"), target,
+                          Text(h.note or "—", "dim"), key=h.name)
         self.keep_cursor(table, len(hosts), cursor)
         cfg = self.tg.ctx.cfg
         self.query_one("#hosts-panel").border_subtitle = T(
@@ -663,10 +668,13 @@ class HostsPage(Page):
 
         def done(result) -> None:
             if result:
-                self.tg.refresh_snapshot()
+                self.tg.refresh_snapshot(services_too=result.web)
                 self.notify(f"{result.name} → {result.value}",
                             title=T("✓ Host saved · unbound reloaded"))
-                if ctx.cfg.tunnel.mode == "split":
+                if result.web:
+                    self.notify(T("https://{name} is ready for VPN users. Devices trust it after the CA "
+                                  "certificate is installed once: press c.", name=result.name), timeout=12)
+                elif ctx.cfg.tunnel.mode == "split":
                     self.notify(T("Split-mode routes are updated for users when they reconnect."))
 
         self.app.push_screen(HostForm(submit, host), done)
@@ -692,6 +700,17 @@ class HostsPage(Page):
         self.app.push_screen(ConfirmDialog(
             T("Delete host record"), T("Delete record [b]{name}[/b] → {value}?", name=host.name, value=host.value)
         ), done)
+
+    async def action_ca(self) -> None:
+        from testops_gate.core import webca
+        from testops_gate.paths import P
+
+        ctx = self.tg.ctx
+        if await self.tg.run_op(webca.ensure_ca, ctx.cfg) is None:
+            return
+        web = [h for h in self.tg.snapshot.hosts if h.web]
+        self.app.push_screen(CaDialog(str(P.webca_cert), webca.fingerprint(), ctx.cfg.nodes.domain,
+                                      f"http://{web[0].name}/ca.crt" if web else ""))
 
     async def action_test(self) -> None:
         host = self.selected()

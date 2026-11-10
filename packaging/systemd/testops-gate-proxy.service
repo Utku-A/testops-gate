@@ -1,0 +1,19 @@
+[Unit]
+Description=TestOps Gate web hosts (HTTPS reverse proxy for VPN clients)
+Documentation=https://github.com/Utku-A/testops-gate
+After=network-online.target openvpn-server@server.service
+ConditionPathExists=/etc/testops-gate/proxy/haproxy.cfg
+
+[Service]
+# Enabled by testops-gate while there are web hosts (`testops-gate host add NAME IP:PORT`)
+Type=notify
+ExecStartPre=/usr/sbin/haproxy -c -q -f /etc/testops-gate/proxy/haproxy.cfg
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/testops-gate/proxy/haproxy.cfg -p /run/testops-gate-proxy.pid
+ExecReload=/usr/sbin/haproxy -c -q -f /etc/testops-gate/proxy/haproxy.cfg
+ExecReload=/bin/kill -USR2 $MAINPID
+KillMode=mixed
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

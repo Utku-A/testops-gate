@@ -12,6 +12,7 @@ OPENVPN_UNIT = "openvpn-server@server.service"
 UNBOUND_UNIT = "unbound.service"
 FIREWALL_UNIT = "testops-gate-firewall.service"
 DAEMON_UNIT = "testops-gated.service"
+PROXY_UNIT = "testops-gate-proxy.service"  # HAProxy for web hosts; runs only while there are any
 SURICATA_UNIT = "suricata.service"
 SURICATA_UPDATE_TIMER = "testops-gate-suricata-update.timer"
 
